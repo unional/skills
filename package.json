@@ -1,0 +1,19 @@
+{
+  "name": "workflow-orchestration-agent-skills",
+  "version": "1.0.0",
+  "description": "Workflow orchestration, task management, and core principles for AI coding agents",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/unional/skills.git"
+  },
+  "keywords": [
+    "agent-skill",
+    "workflow",
+    "planning",
+    "cursor",
+    "claude-code",
+    "verification",
+    "task-management"
+  ],
+  "license": "MIT"
+}

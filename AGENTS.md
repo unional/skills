@@ -1,8 +1,14 @@
 # Agent Skills
 
-Reusable skills for AI coding agents — Claude Code, Cursor, Codex, and others.
+This repository contains reusable skills for AI coding agents (Claude Code, Cursor, Codex, and others).
 
-Skills encode **decisions and workflows**, not documentation. Each skill covers one situation and tells the agent what to do, what to skip, and how to adapt to the user's setup.
+Skills are designed to be **general-purpose and widely shareable** — they encode workflows, conventions, and decisions that any developer or team can benefit from, not opinions specific to one codebase or organization.
+
+## Principles
+
+- **Decisions over documentation.** A skill should encode what to decide and how, not repeat reference material the model already knows.
+- **Narrow and invokable.** Each skill covers one workflow. The agent picks it up when the situation matches, not as ambient context.
+- **No baked-in opinions.** Skills detect the user's setup (package manager, monorepo shape, tooling) and adapt rather than assuming a specific stack.
 
 ## Skills
 
@@ -20,22 +26,14 @@ Skills encode **decisions and workflows**, not documentation. Each skill covers 
 ## Installation
 
 ```bash
-# Install a specific skill
-npx skills add unional/skills --skill add-changeset
-
-# Install globally (available across all projects)
+# Install a specific skill (Claude Code, global)
 npx skills add unional/skills --skill add-changeset -g
 
-# Install for a specific agent
-npx skills add unional/skills --skill workflow-planning -a claude-code
-
 # Install all skills
-npx skills add unional/skills --all
+npx skills add unional/skills --all -g
 
-# Local development
-npx skills add /path/to/skills --skill <skill-name> -g -y
+# Install for a specific agent
+npx skills add unional/skills --skill workflow-planning -a claude-code -g
 ```
 
-## Discovery
-
-Browse and search skills at [skills.sh](https://skills.sh).
+Browse and discover skills at [skills.sh](https://skills.sh).

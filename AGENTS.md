@@ -1,39 +1,38 @@
-# Agent Skills
+# AGENTS.md
 
-This repository contains reusable skills for AI coding agents (Claude Code, Cursor, Codex, and others).
+This file provides guidance to AI coding assistants when working with code in this repository.
 
-Skills are designed to be **general-purpose and widely shareable** — they encode workflows, conventions, and decisions that any developer or team can benefit from, not opinions specific to one codebase or organization.
+## What This Repo Is
 
-## Principles
+A collection of reusable skills for AI coding agents (Claude Code, Cursor, Codex, and others). Each skill is a single markdown file that encodes a workflow, decision process, or convention — not documentation.
 
-- **Decisions over documentation.** A skill should encode what to decide and how, not repeat reference material the model already knows.
-- **Narrow and invokable.** Each skill covers one workflow. The agent picks it up when the situation matches, not as ambient context.
-- **No baked-in opinions.** Skills detect the user's setup (package manager, monorepo shape, tooling) and adapt rather than assuming a specific stack.
+## No Build or Test System
 
-## Skills
+This repo is pure markdown. There are no build, lint, or test commands. The only tooling is the `npx skills` CLI used by *consumers* to install skills, not by contributors.
 
-| Skill | Description |
-| ----- | ----------- |
-| **workflow-planning** | Plan-first for non-trivial tasks. Write to `tasks/todo.md`, track progress, re-plan when things go sideways. |
-| **verification-before-done** | Never claim a task complete without evidence. Run tests, linter, build. |
-| **autonomous-bug-fixing** | Fix bugs without hand-holding. Bug report → investigate → fix → verify. No clarification loops. |
-| **subagent-strategy** | Use subagents for research, exploration, and parallel work. Keep main context clean. |
-| **self-improvement-loop** | Capture corrections in `tasks/lessons.md`. Review at session start. Prevent repeat mistakes. |
-| **demand-elegance** | Pause on non-trivial changes to ask for a more elegant solution. Pragmatism for trivial work. |
-| **add-changeset** | Add the right changeset to a change. Detects affected packages in monorepos, chooses bump type, writes changelog-ready summaries. |
-| **setup-changesets** | Initialize changesets in a repo. Handles single packages and monorepos. Optionally creates a shared reusable workflow in a `<user/org>/.github` repo. |
+## Adding a New Skill
 
-## Installation
+Create `skills/<skill-name>/SKILL.md` with this structure:
 
-```bash
-# Install a specific skill (Claude Code, global)
-npx skills add unional/skills --skill add-changeset -g
+```markdown
+---
+name: skill-name
+description: "One sentence trigger description. Should include: WHAT the skill does, WHEN to invoke it, and key situations it handles."
+---
 
-# Install all skills
-npx skills add unional/skills --all -g
+# Skill Title
 
-# Install for a specific agent
-npx skills add unional/skills --skill workflow-planning -a claude-code -g
+...content...
 ```
 
-Browse and discover skills at [skills.sh](https://skills.sh).
+The `description` frontmatter field is used by agents to decide when to invoke the skill. Write it as a rich trigger: include concrete situations, not just a summary.
+
+## Skill Design Principles
+
+- **Decisions over documentation** — encode what to decide and how, not reference material the model already knows
+- **Narrow and invokable** — one workflow per skill; the agent picks it up only when the situation matches
+- **No baked-in opinions** — detect the user's setup (package manager, monorepo shape, tooling) at runtime rather than assuming a specific stack
+
+## CI
+
+Dependabot PRs are automatically approved and merged via `.github/workflows/automerge-dependabot.yml` (rebase strategy).

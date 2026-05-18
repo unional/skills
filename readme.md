@@ -4,6 +4,12 @@ Reusable skills for AI coding agents — Claude Code, Cursor, Codex, and others.
 
 Skills encode **decisions and workflows**, not documentation. Each skill covers one situation and tells the agent what to do, what to skip, and how to adapt to the user's setup.
 
+## Principles
+
+- **Decisions over documentation.** A skill should encode what to decide and how, not repeat reference material the model already knows.
+- **Narrow and composable.** Each skill covers one workflow. Skills can be invoked by situation or called by other skills — never loaded as ambient context. Sub-skills with no direct trigger are valid building blocks for larger workflows.
+- **No baked-in opinions.** Skills detect the user's setup (package manager, monorepo shape, tooling) and adapt rather than assuming a specific stack.
+
 ## Skills
 
 | Skill | Description |

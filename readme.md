@@ -42,6 +42,16 @@ npx skills add unional/skills --all
 npx skills add /path/to/skills --skill <skill-name> -g -y
 ```
 
+## Bundles
+
+A bundle is a separate skill repo scoped to a specific tool or workflow. Install a bundle the same way:
+
+```bash
+npx skills add unional/claude-sharp --all
+```
+
+Bundles can override a tool's built-in skills or add behaviors not covered by this repo.
+
 ## Discovery
 
 Browse and search skills at [skills.sh](https://skills.sh).

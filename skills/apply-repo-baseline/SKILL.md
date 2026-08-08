@@ -32,6 +32,7 @@ Not for: authoring CI workflow content (that lives in each owner's `.github` rep
 | Actions token | repo | `actions-permissions.json` / `-inherit.json`, by whether the release caller declares `permissions:` — see § 5 | `PUT /repos/{o}/{r}/actions/permissions/workflow` |
 | Org defaults | org | `assets/org-settings.json` | `PATCH /orgs/{org}` |
 | Dependency automation | repo | `assets/renovate-preset.json` | files + `/repos/{o}/{r}/automated-security-fixes` |
+| Bypass and approval hardening | repo | § Hardening audit | rulesets + `/actions/permissions/workflow` |
 | File layout | repo | table in § File layout | files in the repo |
 
 ## Steps
@@ -277,6 +278,34 @@ gh api "repos/$R/actions/permissions/workflow" --jq .default_workflow_permission
 
 `read` **and** a release caller with no `permissions:` block is a failed run, not a clean one. Say
 so in the report and leave the repo listed as broken until one side is fixed.
+
+## Hardening audit — four things the ruleset alone does not cover
+
+Run these on every repo whose default branch publishes. Each is a read; report before changing anything.
+
+```bash
+R=<owner>/<repo>
+gh api repos/$R/rulesets/<id> --jq '{bypass:.bypass_actors, rules:[.rules[].type]}'
+gh api repos/$R/actions/permissions/workflow --jq .can_approve_pull_request_reviews
+gh api repos/$R/keys --jq 'length'
+gh api orgs/<org>/installations --jq '.installations[]|{app:.app_slug,scope:.repository_selection}'
+```
+
+| Finding | Why it matters | Fix |
+|---|---|---|
+| No `pull_request` rule | Nothing requires review. CI passing is the entire merge gate, on a branch that auto-publishes | Add the rule with `required_approving_review_count: 1`. Admin bypass keeps a solo maintainer unblocked, so it costs nothing now and constrains collaborators later |
+| `can_approve_pull_request_reviews: true` | A workflow can satisfy the review requirement itself, hollowing out the rule above | Set `false`; nothing in this baseline needs it |
+| `DeployKey` bypass with **zero** deploy keys | Reads as harmless and is — until someone adds a key, which then bypasses every rule silently | Remove the bypass actor. Re-add deliberately if a key is ever needed |
+| Apps installed org-wide (`repository_selection: "all"`) | A retired tool keeps posting checks on every repo in the org, including ones transferred in later. Removing its **config** does not stop it; only uninstalling does | Uninstall or re-scope at `/organizations/<org>/settings/installations`. **Human-only** — needs an app JWT or owner UI |
+
+The first three constrain *other* actors, not the admin running the baseline. Say that plainly in the
+report rather than implying the repo is now protected against its own owner's automation — that risk is
+governed by the auto-merge rule below, not by settings.
+
+**Auto-merge rule.** Enable auto-merge only for PRs from branches **in the repo**, authored by the owner
+or the owner's automation, whose commit type cannot publish (`refactor:` / `chore:` / `ci:` / `test:` /
+`docs:`). Never a fork PR, whatever its title claims. A fork PR cannot enable auto-merge on itself — that
+needs write access — but the rule matters once more than one actor has it.
 
 ## File layout
 

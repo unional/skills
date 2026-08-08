@@ -37,6 +37,7 @@ When a skill here turns out to be useful beyond my own repos, it graduates to on
 | **add-changeset** | Add the right changeset to a change. Detects affected packages in monorepos, chooses bump type, writes changelog-ready summaries. |
 | **setup-changesets** | Initialize changesets in a repo. Handles single packages and monorepos. Optionally creates a shared reusable workflow in a `<user/org>/.github` repo. |
 | **setup-secretless-release** | Move a release off `NPM_TOKEN`/PAT secrets onto OIDC trusted publishing, and make dependency PRs merge without manual rebases. Diagnoses pipelines that stopped publishing. |
+| **transfer-repo-to-org** | Move a repo from a personal namespace into an org without breaking its next release. Re-registers the npm trusted publisher that pins `owner/repo`, fixes metadata, unlocks the merge queue. |
 
 ## Installation
 

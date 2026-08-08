@@ -24,6 +24,7 @@ Not for: authoring CI workflow content (that lives in each owner's `.github` rep
 | Module | Target | Data | API |
 |---|---|---|---|
 | Branch ruleset | repo | `assets/branch-ruleset.json` (+ `rule-code-scanning.json` when CodeQL runs) | `/repos/{o}/{r}/rulesets` |
+| Merge queue | repo, org-owned only | `assets/rule-merge-queue.json` — a rule inside the `main` ruleset, see § 3 | same |
 | Copilot review | repo, opt-in | `assets/copilot-review-ruleset.json` | same |
 | Merge settings | repo | `assets/repo-settings.json` | `PATCH /repos/{o}/{r}` |
 | Security | repo, public only | `assets/security-settings.json` | `PATCH /repos/{o}/{r}` |
@@ -68,6 +69,56 @@ Start from `assets/branch-ruleset.json`. Then:
 
 - Repo has `.github/workflows/codeql-analysis.yml` → append `assets/rule-code-scanning.json` to `rules`.
 - User asked for Copilot review, or the repo already has that ruleset → also reconcile `assets/copilot-review-ruleset.json` as a **separate** ruleset. Keep it separate; that is how the repos that have it are shaped, and it lets the review rule be dropped without touching protection.
+- Repo is org-owned and the user wants a queue → append `assets/rule-merge-queue.json` and flip `strict` off, under the preconditions below.
+
+#### Merge queue — opt-in, org-owned only
+
+Default off. `strict_required_status_checks_policy: true` is what the baseline ships, and it costs
+something: merging one PR makes every other PR stale, and nothing else in the baseline updates them.
+GitHub's native auto-merge waits for checks and **never** updates the branch; `allow_update_branch:
+true` in `repo-settings.json` is only a manual affordance. Renovate does resolve it — default
+`rebaseWhen: auto` detects the strict requirement and reads rulesets, not only legacy branch
+protection — but at its polling cadence, and each rebase re-runs the full matrix, so draining N
+dependency PRs costs N + (N-1) + … full CI runs. A queue replaces that with one build per candidate
+against the real base.
+
+Three preconditions, in this order. Each is a hard gate, not a preference:
+
+1. **The repo must be org-owned.** `gh api "repos/$R" --jq .owner.type` → `Organization`. On a
+   user-owned repo the ruleset API rejects the rule with `Invalid rule 'merge_queue': ` and an
+   **empty** error detail; the identical call succeeds after a transfer to an org. Detect ownership
+   *before* offering the queue — the error tells you nothing, so do not learn this from the API.
+2. **`merge_group:` must already be on the workflow producing the required check.** The queue builds
+   a temporary branch that fires neither `pull_request` nor `push`. Without the trigger, `code /
+   all-checks` never starts and the queue waits forever. Land that edit to `pull-request.yml`,
+   confirm a run appears, *then* add the rule.
+3. **Set `strict_required_status_checks_policy: false` in the same PUT.** The queue tests each
+   candidate against the real base, so up-to-date is redundant — and left on, it strands PRs before
+   they ever enqueue.
+
+Working parameters live in `assets/rule-merge-queue.json`. All seven are **required**; omitting any
+gives the same empty-detail rejection as the org limitation, so the error does not distinguish a
+missing parameter from a user-owned repo. Check ownership first and you will know which it was.
+
+Where a queue exists, retire the third-party bot merge rules. A bot's direct `merge` action
+**bypasses** the queue rather than feeding it. Renovate's `platformAutomerge` and Dependabot's
+`gh pr merge --auto` both enqueue natively, so § 6's convergence is what the queue wants anyway.
+
+Verify with two trivial PRs touching different files, auto-merge armed on both:
+
+```bash
+gh run list --repo "$R" --limit 10 --json event,headBranch \
+  --jq '.[] | select(.event=="merge_group") | .headBranch'
+```
+
+Each is `gh-readonly-queue/main/pr-<N>-<base-sha>`. The second PR's base SHA must be the **first
+PR's merge commit** — that is the proof it was rebuilt and re-tested rather than merged stale. Same
+base SHA on both means the queue is not doing its job.
+
+On a user-owned repo the queue is unavailable, so the stall stands. There, `strict` stays `true` and
+`allow_update_branch: true` is mandatory, not optional — without it a stale PR has no affordance to
+update at all and waits on Renovate's next run. Never leave a user-owned repo with `strict: true`
+and `allow_update_branch: false`.
 
 ### 4. Diff, then apply
 
@@ -96,7 +147,7 @@ Invariants to enforce while diffing — these are couplings, not preferences:
 | `strict_required_status_checks_policy: true` ⇒ `allow_auto_merge: true` | Strict means "branch must be current". Without auto-merge every bot PR needs a manual update-and-wait. |
 | Callee `permissions:` ⊄ caller's granted set ⇒ `startup_failure` | The caller's granted set is its job `permissions:` block **if present, else the repo default**; a called workflow's declared `permissions:` must fit inside it. Overflow is rejected at resolution: **zero jobs, no logs, no annotation**, and the UI blames "a workflow file issue". `id-token: write` fits a default set only when that default is `write`. See § 5 — a block-less release caller under a `read` default is a hard failure, not a warning. |
 | `strict_required_status_checks_policy: true` ⇒ `allow_update_branch: true` | Strict makes a PR stale as soon as another merges, and GitHub auto-merge **does not update the branch**. Without this flag there is no affordance to update at all, so the PR waits on Renovate's next run. |
-| Merge queue ⇒ `strict_required_status_checks_policy: false` | The queue tests each candidate against the real base, so up-to-date is redundant and strands PRs before they enqueue. The queue also needs `merge_group` on the workflow producing the required check, landed **before** the rule, or it waits forever on a check that never starts. Unavailable to user-owned repos: the ruleset API rejects the rule with `Invalid rule 'merge_queue':` and no detail. |
+| Merge queue ⇒ `strict_required_status_checks_policy: false` | The queue tests each candidate against the real base, so up-to-date is redundant and strands PRs before they enqueue. The queue also needs `merge_group` on the workflow producing the required check, landed **before** the rule, or it waits forever on a check that never starts. Unavailable to user-owned repos: the ruleset API rejects the rule with `Invalid rule 'merge_queue':` and no detail. Both gates and the parameters are in § 3. |
 
 ### 5. Actions token — decided by the release caller's `permissions:` block
 
@@ -228,7 +279,7 @@ Setup mode only — the per-repo files the baseline assumes. Owner-level content
 
 | File | Content |
 |---|---|
-| `.github/workflows/pull-request.yml` | job `code` → `<owner>/.github/.github/workflows/pnpm-verify*.yml@main` |
+| `.github/workflows/pull-request.yml` | job `code` → `<owner>/.github/.github/workflows/pnpm-verify*.yml@main`; add `merge_group:` to `on:` before adding a merge queue rule (§ 3) — the queue's branch fires neither `pull_request` nor `push` |
 | `.github/workflows/release.yml` | job `code` (same reusable) + job `release` → `pnpm-release-changeset*.yml@main`, `needs: code`, job `permissions: id-token/contents/pull-requests: write` |
 | `.github/workflows/codeql-analysis.yml` | copy of the owner's version; required for the code-scanning rule |
 | `.github/renovate.json` | `{"extends": ["github>unional/renovate-preset"]}` — the only dependency-automation file; see § 6 |
@@ -251,6 +302,9 @@ Prefer **OIDC/trusted publishing** for release (`pnpm-release-changeset-oidc.yml
 - Do not lower a repo to `read` before the caller's `permissions:` block has landed, and do not finish a run that leaves a block-less caller under `read`. That combination fails at resolution with no logs — report it as a failure rather than shipping a repo that looks fine.
 - Do not offer org-level rulesets. They need GitHub Team; these orgs are on free.
 - Do not leave two updaters opening PRs for the same dependency, or two systems merging them.
+- Do not offer a merge queue on a user-owned repo. The rule is rejected with an empty error detail, which reads like a malformed payload and sends you looking in the wrong place.
+- Do not add the queue rule before `merge_group:` is on the workflow producing the required check. The queue then waits forever on a check that never starts.
+- Do not leave a user-owned repo with `strict: true` and `allow_update_branch: false` — a stale PR would have no way to update at all.
 - Do not remove Mergify before confirming GitHub auto-merge lands a bot PR — that gap means nothing merges.
 - Do not touch archived repos.
 

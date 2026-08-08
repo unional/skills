@@ -4,11 +4,35 @@ This file provides guidance to AI coding assistants when working with code in th
 
 ## What This Repo Is
 
-A collection of reusable skills for AI coding agents (Claude Code, Cursor, Codex, and others). Each skill is a single markdown file that encodes a workflow, decision process, or convention — not documentation.
+unional's personal universal agent plugin (`unional-skills`) — skills for managing his own repos and organizations and automating the chores specific to how he works, installable on Claude Code, Cursor, Codex, and GitHub Copilot CLI. Each skill is a single markdown file that encodes a workflow, decision process, or convention — not documentation.
+
+Scope check before adding a skill: personal conventions and repo-specific chores belong here; generally useful workflows belong in [repobuddy/repobuddy](https://github.com/repobuddy/repobuddy) or [cyberuni/cyberplace](https://github.com/cyberuni/cyberplace).
+
+Skills can still be installed individually with `npx skills add`; the plugin is the packaged distribution of the same `skills/` directory.
+
+## Plugin Layout
+
+| Path | Role |
+| ---- | ---- |
+| `.plugin/plugin.json` | Canonical manifest — the only file to hand-edit |
+| `.claude-plugin/plugin.json` | Generated — Claude Code |
+| `.cursor-plugin/plugin.json` | Generated — Cursor |
+| `.codex-plugin/plugin.json` | Generated — Codex |
+| `plugin.json` (repo root) | Generated — GitHub Copilot CLI |
+| `skills/` | Skills shipped by the plugin |
+| `.agents/skills/` | Third-party skills installed for local use — **not** shipped |
+
+Never hand-edit a generated manifest. Change `.plugin/plugin.json`, then regenerate:
+
+```bash
+npx universal-plugin plugin build
+```
+
+Vendor targets are the keys of `vendorExtensions` in `.plugin/plugin.json` — adding or removing a key adds or removes that vendor's output.
 
 ## No Build or Test System
 
-This repo is pure markdown. There are no build, lint, or test commands. The only tooling is the `npx skills` CLI used by *consumers* to install skills, not by contributors.
+This repo is pure markdown apart from manifest generation. There are no lint or test commands; the only build step is `npx universal-plugin plugin build`, which regenerates the four vendor manifests from `.plugin/plugin.json`.
 
 ## Adding a New Skill
 
@@ -31,7 +55,6 @@ The `description` frontmatter field is used by agents to decide when to invoke t
 
 - **Decisions over documentation** — encode what to decide and how, not reference material the model already knows
 - **Narrow and invokable** — one workflow per skill; the agent picks it up only when the situation matches
-- **No baked-in opinions** — detect the user's setup (package manager, monorepo shape, tooling) at runtime rather than assuming a specific stack
 
 ## CI
 

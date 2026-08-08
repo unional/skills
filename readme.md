@@ -27,6 +27,7 @@ When a skill here turns out to be useful beyond my own repos, it graduates to on
 | Skill | Description |
 | ----- | ----------- |
 | **apply-repo-baseline** | Bring a repo or org up to my standard baseline — branch ruleset, merge/Actions settings, security toggles, CI layout. Also audits drift across many repos. |
+| **migrate-legacy-ci** | Decide what to do with a repo still on the old `nodejs.yml` pipeline — archive it, drop its CI, or migrate to the `pull-request.yml` + `release.yml` split. Run before the baseline. |
 | **community-proposal** | Contribute a design proposal to an open-source community — research, draft with evidence, file. |
 | **workflow-planning** | Plan-first for non-trivial tasks. Write to `tasks/todo.md`, track progress, re-plan when things go sideways. |
 | **verification-before-done** | Never claim a task complete without evidence. Run tests, linter, build. |

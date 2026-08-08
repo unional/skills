@@ -1,0 +1,22 @@
+# Target: .github/workflows/release.yml
+# `code` re-runs verification on main; `release` publishes via OIDC.
+# The explicit `permissions:` block is what lets the repo keep
+# default_workflow_permissions: read (apply-repo-baseline § 5).
+# Never reintroduce `secrets: npm-token` here.
+name: release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  code:
+    uses: unional/.github/.github/workflows/pnpm-verify-linux.yml@main
+
+  release:
+    uses: unional/.github/.github/workflows/pnpm-release-changeset-oidc.yml@main
+    needs: code
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write

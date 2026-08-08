@@ -1,0 +1,13 @@
+# Target: .github/workflows/pull-request.yml
+# The job id MUST be `code` — it supplies the first half of the required
+# `code / all-checks` context. The callee supplies the second half.
+# Under the orgs use pnpm-verify.yml; unional has pnpm-verify-linux.yml.
+name: pull-request
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  code:
+    uses: unional/.github/.github/workflows/pnpm-verify-linux.yml@main

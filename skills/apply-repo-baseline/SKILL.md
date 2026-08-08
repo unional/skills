@@ -60,6 +60,10 @@ where the reusable workflow ends with an `all-checks` job that fails if `verify`
 
 Check the repo's `.github/workflows/pull-request.yml` for a job whose id is `code` calling one of the owner's `pnpm-verify*` reusable workflows. If it is missing or named differently, **fix CI first or the branch becomes unmergeable** — a required context that no run ever reports blocks every PR forever. Offer either: add the workflow (§ File layout), or apply the ruleset without the `required_status_checks` rule and note the gap.
 
+Confirm from a real run rather than the filename — `gh api repos/$R/commits/$(gh api repos/$R/commits/main --jq .sha)/check-runs --jq '.check_runs[].name'`.
+
+**Stop if the repo is on a legacy CI shape.** A single `nodejs.yml` calling `typescript-build.yml` / `typescript-test*.yml` / `npm-release.yml`, or hand-rolled steps, reports `build / …` and `test / …` and can never produce `code / all-checks`. Do not apply this baseline to such a repo — run **migrate-legacy-ci** first. It decides whether the repo should be archived, have its CI dropped, or be migrated, and most of them should not be migrated at all.
+
 Choose the reusable workflow by owner convention: `pnpm-verify-linux.yml` where it exists (unional), `pnpm-verify.yml` otherwise (clibuilder, cyberuni, repobuddy). Confirm the file exists in `<owner>/.github` before pointing at it.
 
 ### 3. Compose the desired ruleset
@@ -245,6 +249,7 @@ Prefer **OIDC/trusted publishing** for release (`pnpm-release-changeset-oidc.yml
 - Do not apply to a list of repos without printing it first. "All my repos" plus a wrong baseline is a wide blast radius.
 - Do not create a ruleset when one with that name exists — update it.
 - Do not require `code / all-checks` on a repo that does not produce it. Verify in step 2.
+- Do not apply this baseline to a repo still on a legacy CI shape. Route it to **migrate-legacy-ci** first.
 - Do not enable `required_linear_history` while merge commits are still allowed.
 - Do not hand-edit values into API payloads mid-run. If a default is wrong, change `assets/*.json` so the next repo gets it too.
 - Do not decide the Actions default from the callee's filename or from `secrets: inherit`. Read the caller for a `permissions:` block; that is the only thing that decides it.

@@ -16,6 +16,7 @@ The opinions live in `assets/*.json`, not in these steps. Change a default there
 - "Set this repo up like search-packages" / "like the others"
 - Auditing: "which of my repos are missing rulesets?"
 - Org-level: new org, or aligning org defaults for new repos
+- "The Version Packages PR has no checks and cannot merge" on a fresh or just-transferred repo
 
 Not for: authoring CI workflow content (that lives in each owner's `.github` repo), or repo creation itself.
 
@@ -295,6 +296,52 @@ Setup mode only — the per-repo files the baseline assumes. Owner-level content
 
 Prefer **OIDC/trusted publishing** for release (`pnpm-release-changeset-oidc.yml` under unional, `pnpm-release-changeset.yml` under the orgs) — no `NPM_TOKEN` or `CI_GITHUB_TOKEN` to rotate. Each package needs a trusted publisher registered at `npmjs.com/package/<name>/access` naming the repo and the **caller** workflow filename.
 
+## The version PR with no checks — approve once
+
+Right after applying the baseline to a **newly created or newly transferred** repo, the changesets
+"Version Packages" PR appears to have no status checks, and so cannot satisfy the required
+`code / all-checks` context. It looks like the check will never arrive.
+
+It already did. Under GitHub's default `first_time_contributors` approval policy, a repo where
+`github-actions[bot]` has not previously committed holds the bot's `pull_request` runs in
+`action_required` awaiting approval, so nothing reports:
+
+```bash
+gh api "repos/$R/actions/runs/<id>" --jq '{event, conclusion, actor: .actor.login}'
+# {"event":"pull_request","conclusion":"action_required","actor":"github-actions[bot]"}
+```
+
+Approve once. Afterwards the bot is a known contributor and later version PRs run unattended:
+
+```bash
+gh run list --repo "$R" --status action_required
+gh api -X POST "repos/$R/actions/runs/<id>/approve"
+```
+
+Read the policy — repo level, then org — if you want to confirm which rule is holding the run:
+
+```bash
+gh api "repos/$R/actions/permissions/fork-pr-contributor-approval"
+gh api "orgs/<org>/actions/permissions/fork-pr-contributor-approval"
+```
+
+**Change nothing.** The gate is self-clearing after one approval and the policy is a sensible
+default; it is not a drift item and the baseline does not carry a setting for it.
+
+Two dead ends, both tried and reverted on `unional/search-packages`:
+
+- **Do not fabricate the check** with a no-op reusable workflow whose job name reproduces the
+  required context (unional/search-packages#203, reverted in #204). It misdiagnoses the cause and
+  leaves a permanently green check that verified nothing.
+- **Do not reach for an `on: push` workflow watching `changeset-release/**`.** `GITHUB_TOKEN`
+  genuinely does suppress `push` events, so it cannot fire — the same recursion guard, real this
+  time.
+
+A merge queue **can** merge the version PR once its runs are approved — verified on
+`cyberuni/search-packages`, which merged it through the queue with no admin bypass. Earlier guidance
+that a queue could never handle a checkless version PR was wrong; the PR is not checkless, its
+checks are waiting.
+
 ## What NOT to do
 
 - Do not apply to a list of repos without printing it first. "All my repos" plus a wrong baseline is a wide blast radius.
@@ -311,6 +358,7 @@ Prefer **OIDC/trusted publishing** for release (`pnpm-release-changeset-oidc.yml
 - Do not add the queue rule before `merge_group:` is on the workflow producing the required check. The queue then waits forever on a check that never starts.
 - Do not leave a user-owned repo with `strict: true` and `allow_update_branch: false` — a stale PR would have no way to update at all.
 - Do not remove Mergify before confirming GitHub auto-merge lands a bot PR — that gap means nothing merges.
+- Do not treat a checkless version PR as a missing check. Approve the `action_required` run once; never fabricate the context with a no-op workflow, and never try to produce it from an `on: push` workflow.
 - Do not touch archived repos.
 
 ## References

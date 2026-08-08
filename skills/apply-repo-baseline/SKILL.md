@@ -27,7 +27,7 @@ Not for: authoring CI workflow content (that lives in each owner's `.github` rep
 | Copilot review | repo, opt-in | `assets/copilot-review-ruleset.json` | same |
 | Merge settings | repo | `assets/repo-settings.json` | `PATCH /repos/{o}/{r}` |
 | Security | repo, public only | `assets/security-settings.json` | `PATCH /repos/{o}/{r}` |
-| Actions token | repo | `actions-permissions.json` / `-inherit.json`, by release shape — see § 5 | `PUT /repos/{o}/{r}/actions/permissions/workflow` |
+| Actions token | repo | `actions-permissions.json` / `-inherit.json`, by whether the release caller declares `permissions:` — see § 5 | `PUT /repos/{o}/{r}/actions/permissions/workflow` |
 | Org defaults | org | `assets/org-settings.json` | `PATCH /orgs/{org}` |
 | Dependency automation | repo | `assets/renovate-preset.json` | files + `/repos/{o}/{r}/automated-security-fixes` |
 | File layout | repo | table in § File layout | files in the repo |
@@ -82,7 +82,7 @@ id=$(gh api "repos/$R/rulesets" --jq '.[] | select(.name=="main") | .id')
   || gh api -X POST "repos/$R/rulesets"     --input desired.json
 
 gh api -X PATCH "repos/$R" --input assets/repo-settings.json
-gh api -X PUT   "repos/$R/actions/permissions/workflow" --input "$perms"   # § 5 picks the file
+gh api -X PUT   "repos/$R/actions/permissions/workflow" --input "$perms"   # § 5 picks the file — run it LAST
 gh api -X PATCH "repos/$R" --input assets/security-settings.json   # public repos only
 ```
 
@@ -94,27 +94,79 @@ Invariants to enforce while diffing — these are couplings, not preferences:
 |---|---|
 | `required_linear_history` ⇒ `allow_merge_commit: false` | The merge button produces a commit the ruleset rejects. `repo-settings.json` already sets this; never apply the ruleset without it. |
 | `strict_required_status_checks_policy: true` ⇒ `allow_auto_merge: true` | Strict means "branch must be current". Without auto-merge every bot PR needs a manual update-and-wait. |
-| Callee `permissions:` ⊄ caller's granted set ⇒ `startup_failure` | The caller's granted set is its job `permissions:` block **if present, else the repo default**; a called workflow's declared `permissions:` must fit inside it. Overflow is rejected at resolution: **zero jobs, no logs, no annotation**, and the UI blames "a workflow file issue". `id-token: write` fits a default set only when that default is `write`. See § Actions token for which value a repo gets. |
+| Callee `permissions:` ⊄ caller's granted set ⇒ `startup_failure` | The caller's granted set is its job `permissions:` block **if present, else the repo default**; a called workflow's declared `permissions:` must fit inside it. Overflow is rejected at resolution: **zero jobs, no logs, no annotation**, and the UI blames "a workflow file issue". `id-token: write` fits a default set only when that default is `write`. See § 5 — a block-less release caller under a `read` default is a hard failure, not a warning. |
 | `strict_required_status_checks_policy: true` ⇒ `allow_update_branch: true` | Strict makes a PR stale as soon as another merges, and GitHub auto-merge **does not update the branch**. Without this flag there is no affordance to update at all, so the PR waits on Renovate's next run. |
 | Merge queue ⇒ `strict_required_status_checks_policy: false` | The queue tests each candidate against the real base, so up-to-date is redundant and strands PRs before they enqueue. The queue also needs `merge_group` on the workflow producing the required check, landed **before** the rule, or it waits forever on a check that never starts. Unavailable to user-owned repos: the ruleset API rejects the rule with `Invalid rule 'merge_queue':` and no detail. |
 
-### 5. Actions token — conditional, never flat
+### 5. Actions token — decided by the release caller's `permissions:` block
 
-`assets/actions-permissions.json` ships `read`, but it is **only safe once the release caller
-grants its own scopes**. Read `.github/workflows/release.yml` and pick by shape:
+`assets/actions-permissions.json` ships `read` and that stays the default. It is safe **only once
+the release caller grants its own scopes**, so the one fact that decides this module is whether the
+caller declares a `permissions:` block. Read it, do not infer it:
 
-| Release caller | Default to apply |
+```bash
+gh api "repos/$R/contents/.github/workflows/release.yml" --jq .content | base64 -d
+```
+
+Find the job whose `uses:` points at a `pnpm-release-changeset*` reusable workflow, then look for
+`permissions:` **on that job** (workflow-level counts too; job-level wins where both appear). The
+caller's granted set is that block if present, else the repo default — and a callee can only narrow
+what it is given, never widen it. `secrets: inherit` passes secrets, not permissions.
+
+Do **not** decide from the callee filename, from `secrets: inherit`, or from OIDC-vs-token. An
+`-oidc` callee under a block-less caller fails exactly like a token-based one; the block is the
+whole discriminator.
+
+| Caller state | Do this | Default to apply |
+|---|---|---|
+| Release job declares `permissions:` | nothing | `actions-permissions.json` — `read` |
+| No block, and you are editing this repo's files this run | **add the block** (below), land it, then lower | `actions-permissions.json` — `read` |
+| No block, and you are not editing the caller (check mode, or the user declined the edit) | leave the caller alone, widen the default, and say so in the report | `actions-permissions-inherit.json` — `write` |
+| No `release.yml`, or no job calling a release workflow | nothing to grant | `actions-permissions.json` — `read` |
+
+Prefer the block. It is least privilege, it works under either default, and it survives someone
+tightening the org later:
+
+```yaml
+  release:
+    uses: <owner>/.github/.github/workflows/pnpm-release-changeset-oidc.yml@main
+    needs: code
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
+```
+
+Declaring `permissions:` drops every unlisted scope to `none` — which is why `contents` and
+`pull-requests` appear alongside `id-token`, not just the scope the callee obviously needs.
+
+**Order matters.** Land the caller edit *before* the `PUT .../actions/permissions/workflow` that
+lowers the repo. Lowering first breaks the next release **silently** — `startup_failure`, zero jobs,
+no logs, no annotation, and the UI blames "a workflow file issue" and points at nothing.
+
+**Fail loudly.** A run must never finish leaving a `read` default under a caller with no block. If
+the block cannot be added and the default cannot be widened, stop, do not report the repo as done,
+and name the state: *release caller declares no `permissions:` and the default is `read` — the next
+release will `startup_failure` before any job starts.* Silence here is the actual bug; a repo whose
+release cannot resolve looks identically healthy to one that is fine.
+
+Also worth knowing when a caller is missing more than the release scopes — everything else in the
+baseline layout self-declares, so none of it needs a `write` default:
+
+| Workflow | Scopes it needs |
 |---|---|
-| `release` job declares `permissions:` (`id-token`/`contents`/`pull-requests: write`) | `assets/actions-permissions.json` — `read`; the block covers the callee, least privilege holds |
-| No block, `secrets: inherit` (the older token-based callee) | `assets/actions-permissions-inherit.json` — `write`; the callee's `id-token: write` must come from the default, or nothing runs |
+| `pull-request.yml` | read only — which is why it starts fine on a repo whose release does not |
+| `dependabot-automerge.yml` | `contents: write`, `pull-requests: write` |
+| `codeql-analysis.yml` | `security-events: write`, `actions: read` |
+| docs/Pages deploy | `pages: write`, `id-token: write` — the caller must grant these |
 
-Lowering a `secrets: inherit` repo to `read` breaks its release **silently** — no jobs, no logs.
-When a repo is in the second row, prefer migrating it to the explicit-block shape
+Where a repo lands in row three, prefer migrating it to the explicit-block shape
 (**setup-secretless-release**) and *then* lowering, rather than leaving `write` in place.
 
 Verified 2026-08-08: `unional/stable-context` (`read`, no block → `startup_failure`) against
 `unional/assertron` and `unional/path-equal` (`write`, no block → success, otherwise identical),
-and `clibuilder/clibuilder` (`read` **with** block → success).
+`clibuilder/clibuilder` (`read` **with** block → success), and `cyberuni/search-packages`
+(block present → works, and would work under `read` too).
 
 `can_approve_pull_request_reviews: false` is unconditional.
 
@@ -160,6 +212,16 @@ Two couplings in that preset worth preserving:
 
 Re-read each changed resource and confirm it matches. Report per repo: applied / already-matching / skipped-with-reason. Never report a repo as done without the re-read.
 
+One check is not a re-read but a resolution guard — run it on every repo that has a `release.yml`,
+including ones where nothing changed:
+
+```bash
+gh api "repos/$R/actions/permissions/workflow" --jq .default_workflow_permissions
+```
+
+`read` **and** a release caller with no `permissions:` block is a failed run, not a clean one. Say
+so in the report and leave the repo listed as broken until one side is fixed.
+
 ## File layout
 
 Setup mode only — the per-repo files the baseline assumes. Owner-level content (reusable workflows, community health files) belongs in `<owner>/.github`, not copied here.
@@ -185,6 +247,8 @@ Prefer **OIDC/trusted publishing** for release (`pnpm-release-changeset-oidc.yml
 - Do not require `code / all-checks` on a repo that does not produce it. Verify in step 2.
 - Do not enable `required_linear_history` while merge commits are still allowed.
 - Do not hand-edit values into API payloads mid-run. If a default is wrong, change `assets/*.json` so the next repo gets it too.
+- Do not decide the Actions default from the callee's filename or from `secrets: inherit`. Read the caller for a `permissions:` block; that is the only thing that decides it.
+- Do not lower a repo to `read` before the caller's `permissions:` block has landed, and do not finish a run that leaves a block-less caller under `read`. That combination fails at resolution with no logs — report it as a failure rather than shipping a repo that looks fine.
 - Do not offer org-level rulesets. They need GitHub Team; these orgs are on free.
 - Do not leave two updaters opening PRs for the same dependency, or two systems merging them.
 - Do not remove Mergify before confirming GitHub auto-merge lands a bot PR — that gap means nothing merges.

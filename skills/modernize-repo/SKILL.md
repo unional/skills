@@ -66,15 +66,41 @@ A repo still on a single `nodejs.yml` (calling `typescript-build` / `typescript-
 
 Decide before migrating: archive the repo, delete the workflow, or migrate. Do not sink effort into a pipeline for a package nobody consumes.
 
-### 6. Dependency automation
+### 6. Toolchain, build, tests and dependencies
+
+Invoke **modernize-toolchain**. It is a whole phase, not a bump pass.
+
+**Do the toolchain swap before the version bumps.** Most of an old repo's outdated list is *deleted*
+by the swap, and the deleted ones are the expensive upgrades. On `color-map`, 11 of 18 outdated
+packages were removed rather than upgraded. Bumping first throws that work away.
+
+Do not split dependencies, toolchain and build into separate missions — the split is what creates
+the wasted bumps.
+
+### 7. Dependency automation
 
 One updater and one merge mechanism. A third-party bot's direct `merge` action bypasses a merge queue rather than feeding it, so retire those rules where a queue exists and let Renovate's `platformAutomerge` and Dependabot's `gh pr merge --auto` enqueue natively.
 
 Majors stay manual; they break builds in ways CI catches but humans should choose to absorb.
 
-### 7. Prove it
+### 8. Prove it
 
 Claiming done without evidence is the failure mode this whole pass exists to remove.
+
+**The PR title is the release trigger.** With squash-merge and semantic-release, the squashed
+commit's subject *is* the PR title, so the title decides whether a release fires and how the
+version moves. Pick the type against what the published artifact does, not against how much work
+the PR was:
+
+| The PR... | Type | Result |
+|---|---|---|
+| adds public API | `feat:` | minor |
+| changes what ships, without new API — a rebuild, different emitted output | `fix:` | patch |
+| changes only repo-internal things — repo layout, test runner, CI | `refactor:` / `chore:` / `ci:` | no release |
+
+Two toolchain PRs on `color-map` were titled `feat:` and each cut a minor while adding no API. No
+semver contract broke — a minor is a safe superset of a patch — but the changelog now advertises
+features that do not exist.
 
 | Claim | Proof |
 |---|---|
@@ -98,6 +124,7 @@ Delete any temporary validation artifacts in the same pass.
 ## References
 
 - **apply-repo-baseline** — settings, rulesets, Actions token, file layout
+- **modernize-toolchain** — the build/lint/test/dependency swap phase 6 delegates to
 - **setup-secretless-release** — OIDC migration, trusted publishers, merge queue; its `references/failure-catalogue.md` carries the diagnostic signatures for phase 1
 - **setup-changesets** — if the repo has no changesets setup yet
 - **verification-before-done** — the evidence bar phase 7 applies

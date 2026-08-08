@@ -1,0 +1,21 @@
+{
+	"name": "Code Quality Copilot review for default branch",
+	"target": "branch",
+	"enforcement": "active",
+	"conditions": {
+		"ref_name": {
+			"include": ["~DEFAULT_BRANCH"],
+			"exclude": []
+		}
+	},
+	"bypass_actors": [],
+	"rules": [
+		{
+			"type": "copilot_code_review",
+			"parameters": {
+				"review_draft_pull_requests": true,
+				"review_on_push": true
+			}
+		}
+	]
+}

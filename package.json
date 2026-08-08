@@ -1,19 +1,30 @@
 {
-  "name": "workflow-orchestration-agent-skills",
+  "name": "unional-skills",
   "version": "1.0.0",
-  "description": "Workflow orchestration, task management, and core principles for AI coding agents",
+  "description": "Workflow orchestration, verification, and contribution skills for AI coding agents",
   "repository": {
     "type": "git",
     "url": "https://github.com/unional/skills.git"
   },
   "keywords": [
     "agent-skill",
+    "agent-plugin",
     "workflow",
     "planning",
     "cursor",
     "claude-code",
+    "codex",
+    "copilot-cli",
     "verification",
     "task-management"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "files": [
+    ".plugin/",
+    ".claude-plugin/",
+    ".cursor-plugin/",
+    ".codex-plugin/",
+    "plugin.json",
+    "skills/"
+  ]
 }

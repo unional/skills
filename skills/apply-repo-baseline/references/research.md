@@ -119,9 +119,41 @@ same fix arrives via Renovate's `vulnerabilityAlerts`, in one queue with one pol
 (`unional/renovate-preset/default.json`) still extends `config:base`, deprecated in favour of
 `config:recommended` — updating it is part of adopting this.
 
+## Merge queue — probed 2026-08-08
+
+The stall the open question below predicted is real, and nothing in the baseline resolved it on its
+own:
+
+| Component | Updates a behind PR? |
+|---|---|
+| `strict_required_status_checks_policy: true` | no — it creates the stall |
+| GitHub native auto-merge | **no** — waits for checks, never updates the branch |
+| `allow_update_branch` | was absent from `repo-settings.json`, so no manual affordance either |
+
+Renovate does resolve it — default `rebaseWhen: auto` detects the strict requirement and reads
+rulesets, not only legacy branch protection — but at its polling cadence, and every rebase re-runs
+the full matrix. Draining N dependency PRs costs N + (N-1) + … full CI runs.
+
+Two things came out of the probe:
+
+- `allow_update_branch: true` is now in `assets/repo-settings.json`, unconditionally. It is the
+  floor for repos that cannot have a queue.
+- `assets/rule-merge-queue.json` carries the parameters verified working on
+  `cyberuni/search-packages`. All seven are required.
+
+The org limitation was established by probing the rule in an isolated disabled ruleset on a
+user-owned repo: `Invalid rule 'merge_queue': ` with an **empty** detail. The identical call
+succeeded first try after transferring the repo to an org. Omitting any of the seven parameters
+produces the same empty-detail rejection, so the error does not distinguish the two causes — check
+`.owner.type` first and the ambiguity disappears.
+
+A third-party bot's direct `merge` action bypasses a queue rather than feeding it. Renovate's
+`platformAutomerge` and Dependabot's `gh pr merge --auto` enqueue natively, which is another reason
+the § 6 convergence and the queue want the same end state.
+
 ## Open questions
 
-- **`strict_required_status_checks_policy: true`** means every bot PR must be up to date with main
-  before merging. With several bots this can thrash. It is the newest choice, so it is the default,
-  but if bot PRs start stalling, this is the knob.
+- **`strict_required_status_checks_policy: true`** stays the default because the alternative needs
+  an org. On org-owned repos the answer is the merge queue (which requires `strict: false`); on
+  user-owned repos strict stays on and `allow_update_branch: true` is the only affordance.
 - **Bypass actors** — role ids 2 and 5 inherited without verification of which UI roles they map to.

@@ -1,6 +1,6 @@
 ---
 name: setup-secretless-release
-description: "Move a package's release off long-lived NPM_TOKEN/PAT secrets onto OIDC trusted publishing, and keep dependency PRs merging themselves. Use this skill when a release publishes with a token, has silently stopped publishing, or when asked to 'fix releases', 'remove NPM_TOKEN', or 'set up trusted publishing'."
+description: "Move a package's release off long-lived NPM_TOKEN/PAT secrets onto OIDC trusted publishing, whether it releases with changesets or semantic-release, and keep dependency PRs merging themselves. Use this skill when a release publishes with a token, has silently stopped publishing, fails with 401 on /-/whoami or ENONPMTOKEN, or when asked to 'fix releases', 'remove NPM_TOKEN', or 'set up trusted publishing'."
 ---
 
 # Setup Secretless Release
@@ -45,6 +45,7 @@ Read the failing job's **name and duration** first — they identify the class f
 | `startup_failure`, no jobs, no logs | Callee requests more permission than the caller holds — check `default_workflow_permissions` |
 | `Input required and not supplied: token` | Workflow checks out with a PAT the repo does not have |
 | `401 Unauthorized - GET .../-/whoami` | `NPM_TOKEN` expired or revoked |
+| `ENONPMTOKEN: No npm token specified` **after** migrating | Not a token problem — OIDC was never reached. See the failure catalogue |
 | `Publish command exited with code 1` | Real failure in the publish step — read further, do not assume auth |
 
 Load `references/failure-catalogue.md` for the full set with worked examples.
@@ -76,6 +77,15 @@ Then update `repository`, `homepage`, and `bugs` in `package.json` — `reposito
 
 ## Step 3 — Point the release at a secretless workflow
 
+Pick by release tool, not by package manager — the two differ in more than the install command:
+
+| Release tool | Secretless reusable workflow |
+| --- | --- |
+| changesets | `pnpm-release-changeset-oidc.yml` |
+| semantic-release | `yarn-release-semantic-oidc.yml` |
+
+Both already exist in `unional/.github`. If a repo uses a package manager the matching workflow does not cover, derive a new variant from the existing OIDC one and change only the auth — never start from the token-based workflow.
+
 The caller grants permissions; the callee cannot exceed them.
 
 ```yaml
@@ -85,6 +95,19 @@ The caller grants permissions; the callee cannot exceed them.
     permissions:
       id-token: write
       contents: write
+      pull-requests: write
+```
+
+semantic-release needs two more, because `@semantic-release/github` comments on the issues and PRs a release closes:
+
+```yaml
+  release:
+    uses: <owner>/.github/.github/workflows/yarn-release-semantic-oidc.yml@main
+    needs: code
+    permissions:
+      id-token: write
+      contents: write
+      issues: write
       pull-requests: write
 ```
 
@@ -115,6 +138,8 @@ For more than a handful of packages, use the **setup-npm-trusted-publishing** sk
 ## Step 5 — First release after migrating
 
 Registering trust is additive: token publishing keeps working until explicitly disallowed, so the migration is not a cutover and can be verified before removing anything.
+
+**semantic-release publishes straight from the default branch with no version PR.** Everything below, plus Step 6's ruleset concerns, is changesets-specific — skip it. What a semantic-release repo gets instead is one hazard of its own: the first release on a **maintenance** branch (`1.32.x`) fails `E401` on `npm dist-tag add`, because trusted publishers are not yet allowed to set dist-tags (semantic-release/npm#1023, npm/cli#8547 — both open). A re-run succeeds. Default-branch releases are unaffected, so do not treat this as a failed migration.
 
 The changesets "Version Packages" PR needs a **one-time workflow approval**. Its `pull_request` runs do fire, but land in `action_required` under the `first_time_contributors` policy until `github-actions[bot]` has a merged commit in that repo — so no required check reports and the PR looks checkless.
 
@@ -160,6 +185,9 @@ Each is `gh-readonly-queue/main/pr-<N>-<base-sha>`. The second PR's base SHA sho
 - Do not fabricate a required check with a no-op workflow to get a checkless PR through. Approve the runs instead (Step 5).
 - Do not try an `on: push` workflow watching `changeset-release/**`. `GITHUB_TOKEN` genuinely does suppress `push` events, so it cannot fire.
 - Do not treat trusted publishing as per repo, or point `--file` at the reusable workflow.
+- Do not install semantic-release unpinned in a secretless workflow. An old core resolves an old `@semantic-release/npm` that predates trusted publishing, and the OIDC path is skipped silently.
+- Do not give `actions/setup-node` a `registry-url` on a semantic-release OIDC job. The `.npmrc` it writes is what produces the spurious `ENONPMTOKEN`.
+- Do not chase a maintenance-branch `E401` as a misconfiguration. It is npm/cli#8547 and clears on re-run.
 - Do not enable "Require 2FA and disallow tokens" in the same pass as registering trust, before any OIDC publish has succeeded.
 - Do not bulk-apply `npm trust` without fail-fast; an auth fault affects every package and burns one 2FA code each.
 - Do not add a `merge_queue` rule before the `merge_group` trigger is on the default branch.
@@ -169,5 +197,7 @@ Each is `gh-readonly-queue/main/pr-<N>-<base-sha>`. The second PR's base SHA sho
 
 - `references/failure-catalogue.md` — release-failure classes with worked examples and diagnostic commands
 - https://docs.npmjs.com/trusted-publishers/ — trusted publisher concepts
+- https://github.com/semantic-release/npm/issues/1069 — `ENONPMTOKEN` under correct OIDC config; closed as a resolution/`.npmrc` fault, not a plugin bug
+- https://github.com/npm/cli/issues/8547 — trusted publishers cannot `npm dist-tag add`; the root of the maintenance-branch `E401`
 - https://docs.npmjs.com/cli/v11/commands/npm-trust/ — `npm trust` subcommands and flags
 - https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue — merge queue, including the `merge_group` requirement

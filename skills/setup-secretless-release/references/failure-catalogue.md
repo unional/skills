@@ -51,6 +51,28 @@ This is the publisher plugin's own auth pre-check — precisely the step trusted
 
 **Fix** — trusted publishing. Rotating the token works but recurs.
 
+## `ENONPMTOKEN` after migrating to OIDC
+
+**Signature** — `ENONPMTOKEN: No npm token specified`, on a job that has `id-token: write` and a registered trusted publisher. Reads as "trusted publishing does not work"; it means the OIDC exchange was never attempted.
+
+Two causes, both upstream of npm (semantic-release/npm#1069, closed as not-a-bug):
+
+1. **A stale plugin version.** An older `semantic-release` core resolves `@semantic-release/npm` 9.x or 12.x, which predates trusted publishing.
+
+   ```bash
+   npm ls --depth=9999 | grep semantic | grep npm
+   ```
+
+   Two lines with different versions is the fault. Fix by installing `semantic-release` and `@semantic-release/npm` by name and version in the workflow, so the resolved version is asserted rather than inherited.
+
+2. **`actions/setup-node` with `registry-url`.** It writes `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}` and points `NPM_CONFIG_USERCONFIG` at that file. npm sees an auth directive it cannot satisfy and stops. Drop `registry-url` — the publisher plugin writes its own `.npmrc`. (setup-node no longer defaults `NODE_AUTH_TOKEN` to a placeholder, actions/setup-node#1440, but not writing the file at all is the stronger guarantee.)
+
+## Maintenance-branch `E401` on first release
+
+**Signature** — `npm error 401 Unauthorized - PUT .../-/package/<pkg>/dist-tags/release-1.32.x`, at the `addChannel` step of `@semantic-release/npm`, on the **first** release from a fresh maintenance branch. The next commit to that branch publishes fine.
+
+Not a misconfiguration: trusted publishers are not yet permitted to run `npm dist-tag add` (npm/cli#8547, open; surfaced as semantic-release/npm#1023). Re-run, and do not roll the migration back over it. Default-branch releases never hit this.
+
 ## Missing release tooling
 
 **Signature** — `sh: 1: changeset: not found`, then `Publish command exited with code 1`.

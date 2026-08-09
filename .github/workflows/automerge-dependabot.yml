@@ -1,5 +1,5 @@
 # Inspired by https://github.com/vercel/turborepo/blob/main/.github/workflows/examples-autoapprove-and-automerge.yml
-# Auto-approves and auto-merges Dependabot PRs.
+# Auto-approves Dependabot PRs and auto-merges the non-major ones.
 name: Dependabot automerge
 on: pull_request
 
@@ -10,11 +10,7 @@ permissions:
 jobs:
   dependabot-approve:
     runs-on: ubuntu-latest
-    if: |
-      always() &&
-      !contains(needs.*.result, 'failure') &&
-      !contains(needs.*.result, 'cancelled') &&
-      github.actor == 'dependabot[bot]'
+    if: github.actor == 'dependabot[bot]'
     steps:
       - name: Dependabot metadata
         id: metadata
@@ -36,7 +32,12 @@ jobs:
         uses: dependabot/fetch-metadata@v2
         with:
           github-token: '${{ secrets.GITHUB_TOKEN }}'
-      - name: Enable auto-merge for Dependabot PRs
+      # Majors are left for a human. An action major can change inputs or runtime
+      # behaviour, and nothing in this repo runs tests that would catch it.
+      - name: Enable auto-merge for non-major Dependabot PRs
+        if: |
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-minor'
         run: gh pr merge --auto --rebase "$PR_URL"
         env:
           PR_URL: ${{github.event.pull_request.html_url}}

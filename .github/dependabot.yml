@@ -1,0 +1,8 @@
+version: 2
+updates:
+  # GitHub Actions is the only real dependency surface in this repo: `package.json`
+  # declares no dependencies, and the one build step runs through `npx`.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

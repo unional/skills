@@ -58,4 +58,6 @@ The `description` frontmatter field is used by agents to decide when to invoke t
 
 ## CI
 
-Dependabot PRs are automatically approved and merged via `.github/workflows/automerge-dependabot.yml` (rebase strategy).
+Dependabot is configured in `.github/dependabot.yml` for `github-actions` only — `package.json` declares no dependencies. Its PRs are auto-approved via `.github/workflows/automerge-dependabot.yml`, which auto-merges patch and minor updates (rebase strategy) and leaves majors for a human.
+
+Renovate is deliberately not enabled; its onboarding PR (#1) was closed. With no dependency manifest, the only thing it had to update was the Dependabot machinery itself.

@@ -31,6 +31,7 @@ Not for: authoring CI workflow content (that lives in each owner's `.github` rep
 | Security | repo, public only | `assets/security-settings.json` | `PATCH /repos/{o}/{r}` |
 | Actions token | repo | `actions-permissions.json` / `-inherit.json`, by whether the release caller declares `permissions:` — see § 5 | `PUT /repos/{o}/{r}/actions/permissions/workflow` |
 | Org defaults | org | `assets/org-settings.json` | `PATCH /orgs/{org}` |
+| Org code security default | org | § Org code security | `/orgs/{org}/code-security/configurations/{id}/defaults` |
 | Dependency automation | repo | `assets/renovate-preset.json` | files + `/repos/{o}/{r}/automated-security-fixes` |
 | Bypass and approval hardening | repo | § Hardening audit | rulesets + `/actions/permissions/workflow` |
 | File layout | repo | table in § File layout | files in the repo |
@@ -370,6 +371,43 @@ or the owner's automation, whose commit type cannot publish (`refactor:` / `chor
 `docs:`). Never a fork PR, whatever its title claims. A fork PR cannot enable auto-merge on itself — that
 needs write access — but the rule matters once more than one actor has it.
 
+## Org code security — do this once per org, before any repo work
+
+`assets/org-settings.json` covers Dependabot and secret scanning for new repos, but **not code
+scanning**. That one lives in a *code security configuration*, and without it every repo created in
+the org starts with no code scanning at all — silently, and forever, because nothing later notices.
+
+There are **many orgs** (28 as of 2026-08-09: cyberuni, repobuddy, justland, clibuilder, mocktomata,
+type-plus, standard-log, …). Sweep them rather than fixing one at a time:
+
+```bash
+for o in $(gh api user/orgs --jq '.[].login'); do
+  cur=$(gh api "orgs/$o/code-security/configurations/defaults" \
+        --jq 'if length==0 then "NONE" else ([.[].default_for_new_repos]|join(",")) end' 2>/dev/null)
+  [ "$cur" = "NONE" ] || { printf '%-22s already %s\n' "$o" "$cur"; continue; }
+  cid=$(gh api "orgs/$o/code-security/configurations" \
+        --jq '.[] | select(.name=="GitHub recommended") | .id' 2>/dev/null | head -1)
+  [ -n "$cid" ] || { printf '%-22s SKIP (no recommended config)\n' "$o"; continue; }
+  echo '{"default_for_new_repos":"all"}' \
+    | gh api -X PUT "orgs/$o/code-security/configurations/$cid/defaults" --input - >/dev/null
+  printf '%-22s set\n' "$o"
+done
+```
+
+Every org ships a GitHub-provided **"GitHub recommended"** configuration already — you do not create
+one. Applied across 26 orgs on 2026-08-09; two (`clean-code-projects`, `typings`) returned 403
+because the account is not an owner there. Report those rather than retrying.
+
+Three things that are easy to get wrong:
+
+- **`default_for_new_repos` only affects repos created afterwards.** It does nothing for existing
+  repos, each of which still needs the per-repo attach below. Setting the default and calling the
+  org done is the trap.
+- **A personal namespace has no configurations.** `unional` is a user, not an org, so the endpoint
+  404s. That is expected, not a failure — repos there get the baseline per repo.
+- **Do this before creating repos**, not after. It is the only part of the baseline that is
+  retroactively impossible to apply for free.
+
 ## Code scanning is attached from the ORG, not set on the repo — 2026-08-09
 
 `PUT /repos/{o}/{r}/code-scanning/default-setup` returns **404**. That is not a permissions error,
@@ -402,6 +440,38 @@ gh api -X PUT "orgs/<org>/code-security/configurations/<id>/defaults" \
 `gh api "repos/$R/code-scanning/analyses?per_page=1"` showing 87 rules evaluated. That repo had **no
 code scanning for three weeks** after a commit deleted its CodeQL workflow "in favor of default
 setup" that was never enabled — a state that reads as healthy from every settings page.
+
+## Transitive advisories with no upgrade path — override, and date the override
+
+Check open alerts as part of the baseline, not just settings:
+
+```bash
+gh api "repos/$R/dependabot/alerts" --jq '.[] | select(.state=="open") |
+  {sev:.security_advisory.severity, pkg:.dependency.package.name,
+   scope:.dependency.scope, patched:.security_vulnerability.first_patched_version.identifier}'
+```
+
+`scope: runtime` on a published package means the advisory **ships to consumers**. Trace it before
+reaching for a fix — `pnpm why <pkg> -r` — because the usual case is a transitive dependency whose
+parent is already on its latest release, so bumping the direct dependency reaches nothing.
+
+Worked example (cyber-asana#157): four `hono` advisories, all runtime, arriving through
+`@modelcontextprotocol/sdk@1.30.0` — already the latest. The only route was a pnpm override:
+
+```yaml
+# pnpm-workspace.yaml  (pnpm 10+; not package.json)
+overrides:
+  hono: '>=4.12.34'
+```
+
+Two rules for overrides:
+
+- **Comment it with the advisory IDs and the exit condition** — "drop once the SDK depends on a
+  patched hono". An undated override silently outlives its purpose and pins a dependency for years.
+- **A published package needs a changeset.** The resolved dependency tree changes, so consumers get
+  the fix only if a release goes out. `patch` is right for a security bump.
+
+Verify by re-reading the alerts, not by the install succeeding — the four closed on merge.
 
 ## Publish gate — the release PR is the last reviewable point
 
@@ -524,6 +594,9 @@ checks are waiting.
 - Do not decide the Actions default from the callee's filename or from `secrets: inherit`. Read the caller for a `permissions:` block; that is the only thing that decides it.
 - Do not lower a repo to `read` before the caller's `permissions:` block has landed, and do not finish a run that leaves a block-less caller under `read`. That combination fails at resolution with no logs — report it as a failure rather than shipping a repo that looks fine.
 - Do not offer org-level rulesets. They need GitHub Team; these orgs are on free.
+- Do not set an org's code security default and call the org done. It applies only to repos created afterwards; existing repos each need the attach.
+- Do not treat a `403` on an org's code-security endpoints as a bug. It means the account is not an owner of that org — report it and move on.
+- Do not add a dependency override without the advisory IDs and an exit condition in a comment, or a changeset if the package is published.
 - Do not leave two updaters opening PRs for the same dependency, or two systems merging them.
 - Do not offer a merge queue on a user-owned repo. The rule is rejected with an empty error detail, which reads like a malformed payload and sends you looking in the wrong place.
 - Do not add the queue rule before `merge_group:` is on the workflow producing the required check. The queue then waits forever on a check that never starts.

@@ -5,7 +5,7 @@ description: "Replace a TypeScript library's build, lint, test and dependency st
 
 # Modernize Toolchain
 
-The build/lint/test half of **modernize-repo** (its phase 5). Everything here is internal to the repo — a separate concern from the release pipeline, settings and automation, which the other skills own.
+The build/lint/test half of **modernize-repo** (its phase 7). Everything here is internal to the repo — a separate concern from the release pipeline, settings and automation, which the other skills own.
 
 ## When to use
 
@@ -141,7 +141,7 @@ One PR, one commit per swap, so each is reviewable and revertible:
 4. `chore(deps):` the test-runner group
 5. `chore(deps):` TypeScript, on its own commit
 
-**The PR title is the release trigger** under squash-merge + semantic-release. See modernize-repo's phase 7 note; pick the type deliberately rather than defaulting to `feat:`.
+**A toolchain swap needs no changeset** — it changes nothing the published package exposes. Add one only if the emitted output actually changes. On a repo not yet migrated to changesets the commit messages decide instead, so pick the type deliberately rather than defaulting to `feat:`. See modernize-repo's phase 9 note.
 
 ## Proof
 

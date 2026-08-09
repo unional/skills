@@ -173,6 +173,10 @@ gh api "repos/$R/contents/package.json" --jq .content | base64 -d | jq '.scripts
 Missing → add `"verify": "run-p lint verify:pkg"` and a lockfile migration in the **same** PR. Splitting
 the workflow before the package can satisfy it just moves the red from one file to another.
 
+A repo on yarn is converting to **pnpm**, not getting a `yarn-verify*` caller — that is the standard,
+and `cyberuni` carries no `yarn-*` workflows to point at anyway. See **modernize-repo**'s
+package-manager phase for what the conversion surfaces.
+
 **5d. Land, then verify the context appears.** Merge the CI PR, then re-run step 1's check-runs command and
 confirm `code / all-checks` is in the list. Only then hand the repo to apply-repo-baseline.
 

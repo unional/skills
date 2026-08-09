@@ -104,14 +104,32 @@ Then update `repository`, `homepage`, and `bugs` in `package.json` — `reposito
 
 ## Step 3 — Point the release at a secretless workflow
 
-Pick by release tool, not by package manager — the two differ in more than the install command:
+Once the section above has settled the release tool, the workflow follows from the **package
+manager**:
 
-| Release tool | Secretless reusable workflow |
-| --- | --- |
-| changesets | `pnpm-release-changeset-oidc.yml` |
-| semantic-release | `yarn-release-semantic-oidc.yml` |
+| Package manager | changesets | semantic-release |
+| --- | --- | --- |
+| pnpm | `pnpm-release-changeset-oidc.yml` | `pnpm-release-semantic-oidc.yml` |
+| bun | `bun-release-changeset-oidc.yml` | none |
+| yarn | none | `yarn-release-semantic-oidc.yml` — **`unional` only** |
 
-Both already exist in `unional/.github`. If a repo uses a package manager the matching workflow does not cover, derive a new variant from the existing OIDC one and change only the auth — never start from the token-based workflow.
+**Check the owner before picking a row.** `unional/.github` and `cyberuni/.github` do not carry the
+same set:
+
+```bash
+gh api repos/<owner>/.github/contents/.github/workflows --jq '.[].name'
+```
+
+**`cyberuni` has no `yarn-*` workflows at all** — not verify, not release. A yarn repo bound for the
+org therefore has nowhere to point, and converting it to pnpm stops being a later phase and becomes
+a precondition of this one (**modernize-repo**, package-manager phase). Verified 2026-08-08; it is
+what blocked three repos in the first OTP batch.
+
+A repo living in the org should call the org's copy for **every** job, release and verify alike.
+Reaching into a personal namespace for the `code` job reintroduces the single point of failure the
+transfer removed.
+
+If a repo uses a package manager the matching workflow does not cover, derive a new variant from the existing OIDC one and change only the auth — never start from the token-based workflow.
 
 The caller grants permissions; the callee cannot exceed them.
 

@@ -50,7 +50,43 @@ Invoke **apply-repo-baseline**. Check mode first, apply after showing the diff.
 
 Two couplings matter for what follows: a repo whose release uses OIDC needs `default_workflow_permissions: write`, and `strict_required_status_checks_policy` must be `false` if a merge queue is coming.
 
-### 4. Release pipeline
+### 4. Package manager, if the repo is still on yarn
+
+**This cannot be a separate PR from the release pipeline below.** Changing package manager breaks a
+`yarn-*` release workflow, so `release.yml` moves in the same commit or publishing breaks. It is
+also a precondition rather than a nicety for any repo bound for `cyberuni`, which carries **no
+`yarn-*` workflows at all**.
+
+pnpm's strict, non-hoisted `node_modules` stops masking whatever the repo was resolving by accident.
+Everything below is a **pre-existing bug surfacing**, not a regression you introduced — say so in the
+PR, or the diff reads as gratuitous churn:
+
+| symptom | cause | fix |
+|---|---|---|
+| `TS2307: Cannot find module 'assert'` / `'events'` | dep undeclared; yarn was hoisting it in | declare `@types/node` |
+| `TS2318: Cannot find global type 'Array'` | an explicit `lib` **replaces** the default set, so `lib: ["DOM"]` alone loads no ES lib | set each config's `lib` to match its own `target` |
+| `TS2339` on a method a dependency adds | module augmentation — see below | declare the members on the subclass |
+| `TS1005` / `TS1109` *inside* a dependency's `.d.ts` | its syntax is newer than your TypeScript | **pin that dependency.** `skipLibCheck` skips type *checking*, not *parsing*, and does not help |
+| `depcheck` says a dep is unused | bin-only in `scripts`, or referenced only by a config file | add to `.depcheckrc.yml`, one package per line |
+| a devDependency missing only in CI | lost while rewriting `package.json` | **diff the old and new dependency lists explicitly** |
+
+Those first two are usually the same accident: the hoisted `@types/node` is often where the ES lib
+was quietly coming from, so fixing one exposes the other.
+
+**A dependency that ships a module augmentation stops augmenting.** Where a package augments
+*another* package from inside its own directory, pnpm resolves that specifier to its own copy — a
+different module identity than the `@types/*` your repo sees — so the augmentation never merges.
+Re-declaring it in `typings/` makes it worse: anchored there it becomes an *ambient* declaration
+that shadows the module instead of merging into it, and a class can no longer extend it at all
+(`TS2689`). Declare the members on the subclass, in the file that uses them.
+
+Native postinstalls and the lockfile soak are covered in **modernize-toolchain**; both apply here
+too. Prove the result with `pnpm install --frozen-lockfile` before opening the PR.
+
+Skipping the `packages/<name>` layout move avoids the `.gitignore` anchoring trap entirely — `/cjs`
+and `/esm` stop matching under a subdirectory, leaving build output untracked but not ignored.
+
+### 5. Release pipeline
 
 Invoke **setup-secretless-release**. It covers the OIDC migration, trusted-publisher registration, the one-time version-PR approval, and merge queue setup.
 
@@ -60,13 +96,13 @@ Do not proceed until a release has actually published — a green run is not pro
 npm view <pkg> version
 ```
 
-### 5. Legacy CI layout, if present
+### 6. Legacy CI layout, if present
 
 A repo still on a single `nodejs.yml` (calling `typescript-build` / `typescript-test` / `npm-release`) predates the `pull-request.yml` + `release.yml` split and will not satisfy a `code / all-checks` required context.
 
 Decide before migrating: archive the repo, delete the workflow, or migrate. Do not sink effort into a pipeline for a package nobody consumes.
 
-### 6. Toolchain, build, tests and dependencies
+### 7. Toolchain, build, tests and dependencies
 
 Invoke **modernize-toolchain**. It is a whole phase, not a bump pass.
 
@@ -77,26 +113,34 @@ packages were removed rather than upgraded. Bumping first throws that work away.
 Do not split dependencies, toolchain and build into separate missions — the split is what creates
 the wasted bumps.
 
-### 7. Dependency automation
+### 8. Dependency automation
 
 One updater and one merge mechanism. A third-party bot's direct `merge` action bypasses a merge queue rather than feeding it, so retire those rules where a queue exists and let Renovate's `platformAutomerge` and Dependabot's `gh pr merge --auto` enqueue natively.
 
 Majors stay manual; they break builds in ways CI catches but humans should choose to absorb.
 
-### 8. Prove it
+### 9. Prove it
 
 Claiming done without evidence is the failure mode this whole pass exists to remove.
 
-**The PR title is the release trigger.** With squash-merge and semantic-release, the squashed
-commit's subject *is* the PR title, so the title decides whether a release fires and how the
-version moves. Pick the type against what the published artifact does, not against how much work
-the PR was:
+**What decides the release depends on the tool, and the answer changed with the merge baseline.**
 
-| The PR... | Type | Result |
+On **changesets** — the destination for every repo here — the *changeset file* decides, and the PR
+title publishes nothing. So the failure mode is omission: a PR that changes the published package
+with no changeset produces a green release run that **publishes nothing**, and `npm view <pkg>
+version` never moves. That is the quiet way a "finished" repo fails its own proof below.
+
+On a repo **not yet migrated**, commit messages decide. Under the merge-commit baseline that is
+worse than it used to be: every branch commit reaches `main` and gets analyzed, so a stray `feat:`
+in a WIP commit cuts an unintended release. It is one more reason to migrate before proving.
+
+Either way, pick against what the published artifact does, not how much work the PR was:
+
+| The PR... | Bump | semantic-release type |
 |---|---|---|
-| adds public API | `feat:` | minor |
-| changes what ships, without new API — a rebuild, different emitted output | `fix:` | patch |
-| changes only repo-internal things — repo layout, test runner, CI | `refactor:` / `chore:` / `ci:` | no release |
+| adds public API | minor | `feat:` |
+| changes what ships, without new API — a rebuild, different emitted output | patch | `fix:` |
+| changes only repo-internal things — repo layout, test runner, CI | **no changeset** | `refactor:` / `chore:` / `ci:` |
 
 Two toolchain PRs on `color-map` were titled `feat:` and each cut a minor while adding no API. No
 semver contract broke — a minor is a safe superset of a patch — but the changelog now advertises
@@ -124,7 +168,7 @@ Delete any temporary validation artifacts in the same pass.
 ## References
 
 - **apply-repo-baseline** — settings, rulesets, Actions token, file layout
-- **modernize-toolchain** — the build/lint/test/dependency swap phase 6 delegates to
+- **modernize-toolchain** — the build/lint/test/dependency swap phase 7 delegates to
 - **setup-secretless-release** — OIDC migration, trusted publishers, merge queue; its `references/failure-catalogue.md` carries the diagnostic signatures for phase 1
 - **setup-changesets** — if the repo has no changesets setup yet
-- **verification-before-done** — the evidence bar phase 7 applies
+- **verification-before-done** — the evidence bar phase 9 applies

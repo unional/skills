@@ -1,6 +1,8 @@
 ---
 name: modernize-toolchain
 description: "Replace a TypeScript library's build, lint, test and dependency stack in one pass — tsdown for the build, biome for lint, turbo for tasks, vitest for tests — instead of upgrading tools that the swap deletes. Use when asked to 'modernize the toolchain', 'bring the deps current', 'replace webpack/eslint/jest', 'upgrade to TypeScript 7', or when a repo's dependency list is long and mostly obsolete."
+metadata:
+  internal: true
 ---
 
 # Modernize Toolchain

@@ -1,6 +1,8 @@
 ---
 name: migrate-legacy-ci
 description: "Decide what to do with one of unional's repos still on a legacy CI shape — a single `nodejs.yml` calling `typescript-build.yml`/`typescript-test.yml`/`npm-release.yml`, or inlined yarn steps — and then archive it, drop its CI, or migrate it to the `pull-request.yml` + `release.yml` split. Use before **apply-repo-baseline** touches a repo, when a ruleset would require `code / all-checks` on a pipeline that cannot produce it, when asked to 'migrate the old workflows', 'fix nodejs.yml', 'why is this PR unmergeable', or when auditing which repos are on the old pipeline."
+metadata:
+  internal: true
 ---
 
 # Migrate Legacy CI

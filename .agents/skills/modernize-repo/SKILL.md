@@ -1,6 +1,8 @@
 ---
 name: modernize-repo
 description: "Bring one repo fully current: settings baseline, a release that publishes without long-lived tokens, dependency PRs that merge themselves, and proof it all works. Use this skill when asked to 'modernize this repo', 'bring it up to standard', 'fix everything about this repo', or after a sweep flags a repo as broken."
+metadata:
+  internal: true
 ---
 
 # Modernize Repo

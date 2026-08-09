@@ -1,6 +1,8 @@
 ---
 name: audit-release-health
 description: "Sweep an owner's repos to find which ones stopped publishing, classify each failure by root cause, and report the evidence needed to fix them. Use when asked 'which of my repos are broken?', 'is anything not publishing?', 'audit my releases', 'find repos that need modernizing', or before running modernize-repo so you know which repos to run it on."
+metadata:
+  internal: true
 ---
 
 # Audit Release Health

@@ -1,6 +1,8 @@
 ---
 name: transfer-repo-to-org
 description: "Move a repo from a personal namespace into an organization without breaking its release — re-registers the npm trusted publisher that pins owner/repo, fixes package metadata and badges, and turns on the merge queue that only org-owned repos can have. Use when asked to 'transfer this repo', 'move it to the org', 'give it org-level secrets', or when modernize-repo phase 2 decides the repo's home."
+metadata:
+  internal: true
 ---
 
 # Transfer Repo To Org

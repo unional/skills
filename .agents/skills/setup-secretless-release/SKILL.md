@@ -1,6 +1,8 @@
 ---
 name: setup-secretless-release
 description: "Move a package's release off long-lived NPM_TOKEN/PAT secrets onto OIDC trusted publishing, migrating it to pnpm + changesets on the way, and keep dependency PRs merging themselves. Use this skill when a release publishes with a token, has silently stopped publishing, fails with 401 on /-/whoami or ENONPMTOKEN, or when asked to 'fix releases', 'remove NPM_TOKEN', or 'set up trusted publishing'."
+metadata:
+  internal: true
 ---
 
 # Setup Secretless Release

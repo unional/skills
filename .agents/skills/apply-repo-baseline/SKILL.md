@@ -1,6 +1,8 @@
 ---
 name: apply-repo-baseline
 description: "Bring one of unional's repos or organizations up to the standard baseline — branch protection ruleset, merge and Actions settings, security toggles, and the CI/release file layout. Use when setting up a new repo, when asked to 'update branch protection', 'require all-checks', 'apply my repo settings', 'set up this repo like the others', or to audit which repos have drifted from the baseline."
+metadata:
+  internal: true
 ---
 
 # Apply Repo Baseline

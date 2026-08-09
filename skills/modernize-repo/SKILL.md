@@ -50,12 +50,20 @@ Invoke **apply-repo-baseline**. Check mode first, apply after showing the diff.
 
 Two couplings matter for what follows: a repo whose release uses OIDC needs `default_workflow_permissions: write`, and `strict_required_status_checks_policy` must be `false` if a merge queue is coming.
 
-### 4. Package manager, if the repo is still on yarn
+### 4. Package manager — convert to pnpm
+
+**pnpm is the standard, and yarn or npm is a legacy state to migrate, not a property to preserve.**
+Convert whenever possible; defer only for a concrete blocker, and name it. "It currently works" is
+not one. Leave **bun** alone where a repo already uses it — both its verify and its OIDC release
+workflow exist, so it is a supported destination.
 
 **This cannot be a separate PR from the release pipeline below.** Changing package manager breaks a
-`yarn-*` release workflow, so `release.yml` moves in the same commit or publishing breaks. It is
-also a precondition rather than a nicety for any repo bound for `cyberuni`, which carries **no
-`yarn-*` workflows at all**.
+`yarn-*` release workflow, so `release.yml` moves in the same commit or publishing breaks — and
+since the release is moving anyway, migrate it to changesets in the same pass
+(**setup-secretless-release**). The two conversions are cheaper together than apart.
+
+For a repo bound for `cyberuni` this is a precondition rather than a preference: the org carries
+**no `yarn-*` workflows at all**, so there is nothing for either job to call.
 
 pnpm's strict, non-hoisted `node_modules` stops masking whatever the repo was resolving by accident.
 Everything below is a **pre-existing bug surfacing**, not a regression you introduced — say so in the
@@ -88,7 +96,11 @@ and `/esm` stop matching under a subdirectory, leaving build output untracked bu
 
 ### 5. Release pipeline
 
-Invoke **setup-secretless-release**. It covers the OIDC migration, trusted-publisher registration, the one-time version-PR approval, and merge queue setup.
+Invoke **setup-secretless-release**. It covers the OIDC migration, the semantic-release → changesets
+migration, trusted-publisher registration, the one-time version-PR approval, and merge queue setup.
+
+**changesets is the standard**, so a repo still on semantic-release migrates here rather than
+staying. Combine it with the phase above where both apply — the release workflow has to move anyway.
 
 Do not proceed until a release has actually published — a green run is not proof:
 
@@ -164,6 +176,9 @@ Delete any temporary validation artifacts in the same pass.
 - Do not treat a green release run as proof of publication.
 - Do not repair pipelines for repos that publish nothing without saying so first.
 - Do not run this across many repos at once; sweep first, then per repo.
+- Do not leave a repo on yarn or semantic-release because it currently works. Both are legacy states; migrate, or name the blocker that stopped you.
+- Do not convert a bun repo to pnpm as part of this pass. bun has both a verify and an OIDC release workflow, so it is a supported destination — that is a separate decision.
+- Do not land a package-manager change and its release-workflow change in separate PRs. The old release workflow breaks the moment the lockfile does.
 
 ## References
 

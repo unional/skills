@@ -494,8 +494,10 @@ skipped on every non-release PR, and a skipped check never satisfies a required 
 preference.** semantic-release publishes straight off a push to the default branch, so there is no
 point between "merged" and "on npm" where anything can be inspected — there is nowhere to put this
 gate. changesets splits it: a push only opens the Version Packages PR, and nothing publishes until
-that PR merges. Prefer changesets on any repo that publishes; migrate semantic-release repos
-(worked example: cyberuni/color-map#212).
+that PR merges. **changesets is the standard, not the preferred option of two** — migrate every
+semantic-release repo rather than choosing per repo (worked example: cyberuni/color-map#212).
+The same applies to the package manager: pnpm, with bun kept where a repo already uses it.
+**setup-secretless-release** owns both migrations.
 
 When migrating off semantic-release: set the package `version` to the **currently published**
 version (replacing `0.0.0-development`), and give `CHANGELOG.md` a `# <package>` H1 — changesets

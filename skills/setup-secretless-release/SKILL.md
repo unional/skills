@@ -1,6 +1,6 @@
 ---
 name: setup-secretless-release
-description: "Move a package's release off long-lived NPM_TOKEN/PAT secrets onto OIDC trusted publishing, whether it releases with changesets or semantic-release, and keep dependency PRs merging themselves. Use this skill when a release publishes with a token, has silently stopped publishing, fails with 401 on /-/whoami or ENONPMTOKEN, or when asked to 'fix releases', 'remove NPM_TOKEN', or 'set up trusted publishing'."
+description: "Move a package's release off long-lived NPM_TOKEN/PAT secrets onto OIDC trusted publishing, migrating it to pnpm + changesets on the way, and keep dependency PRs merging themselves. Use this skill when a release publishes with a token, has silently stopped publishing, fails with 401 on /-/whoami or ENONPMTOKEN, or when asked to 'fix releases', 'remove NPM_TOKEN', or 'set up trusted publishing'."
 ---
 
 # Setup Secretless Release
@@ -15,6 +15,65 @@ Converts a release pipeline from long-lived secrets to OIDC trusted publishing, 
 - Auditing an owner's repos for pipelines that stopped publishing
 
 Not for: converging repo settings onto a baseline (**apply-repo-baseline**), or authoring the reusable workflow content itself (that lives in the owner's `.github` repo).
+
+## The target is pnpm + changesets. Migrate whenever possible.
+
+**These are not two supported options to choose between.** The standard is pnpm as the package
+manager and changesets as the release tool, everywhere. yarn and semantic-release are **legacy
+states to be migrated**, not destinations to select — so the question a repo raises is never "which
+should this use?" but "can it be migrated in this pass?"
+
+Migrate whenever possible. Defer only when something concrete blocks it, and say what: a released
+maintenance branch mid-flight, or a repo whose CI is too broken to prove the conversion. "It
+currently works" is not a blocker.
+
+The two moves come as a pair more often than not. Converting the package manager breaks a `yarn-*`
+release workflow, so `release.yml` has to move in the same commit anyway (**modernize-repo**,
+package-manager phase) — and once it is moving, pointing it at changesets costs almost nothing extra.
+
+### Why changesets is the release tool — a security boundary, not a preference
+
+The difference decides whether a publish can be inspected at all.
+
+- **semantic-release publishes straight off a push to the default branch.** Nothing sits between
+  "merged" and "on npm". There is no artifact to review and nowhere to attach a check.
+- **changesets splits the release in two.** A push only opens or updates the Version Packages PR;
+  nothing publishes until that PR merges. That PR is the only reviewable view of the next release,
+  and it is where **pnpm-publish-gate** diffs the tarball contents and runtime dependencies against
+  the published version.
+
+Every semantic-release repo that comes through this skill gets migrated (worked example:
+cyberuni/color-map#212):
+
+- set `version` to the **currently published** version, replacing `0.0.0-development`
+- add a `# <package>` H1 to `CHANGELOG.md` — changesets inserts right after it, and without one the
+  entries land in the wrong place
+- drop `issues: write` from the release caller; only semantic-release needs it
+- the trusted publisher names `release.yml`, which does not change — no npm-side reconfiguration
+
+There is a second, non-security reason under the current merge baseline: semantic-release derives
+the release type from **commit messages**, so with merge commits every branch commit is analyzed and
+a stray `feat:` in a WIP commit cuts an unintended release. changesets ignores commit messages.
+
+Accepted cost, deliberately: a changesets release requires remembering to write a changeset. Forget
+one and the release run goes green and publishes **nothing** — see the proof step in
+**modernize-repo**.
+
+### Why pnpm is the package manager
+
+Beyond matching the rest of the estate, it is the only one the shared workflows fully cover.
+`cyberuni/.github` carries `pnpm-*` and `bun-*` reusable workflows and **no `yarn-*` at all** — so a
+yarn repo bound for the org has nowhere to point its `code` job or its release, and converting stops
+being a later phase and becomes a precondition. Verified 2026-08-08; it is what blocked three repos
+in the first OTP batch.
+
+pnpm's strict, non-hoisted `node_modules` is also the point, not a side effect: it surfaces
+undeclared dependencies the repo was resolving by accident. Expect the conversion to expose
+pre-existing bugs rather than introduce them.
+
+**bun is a legitimate destination where a repo already uses it** — both `bun-verify.yml` and
+`bun-release-changeset-oidc.yml` exist in both orgs. Do not convert bun to pnpm as part of this
+skill; that is a separate decision. npm and yarn are the ones to migrate.
 
 ## Prerequisites
 
@@ -77,14 +136,34 @@ Then update `repository`, `homepage`, and `bugs` in `package.json` — `reposito
 
 ## Step 3 — Point the release at a secretless workflow
 
-Pick by release tool, not by package manager — the two differ in more than the install command:
+There are only two destinations, because the target is pnpm + changesets:
 
-| Release tool | Secretless reusable workflow |
+| Package manager | Release workflow |
 | --- | --- |
-| changesets | `pnpm-release-changeset-oidc.yml` |
-| semantic-release | `yarn-release-semantic-oidc.yml` |
+| pnpm | `pnpm-release-changeset-oidc.yml` |
+| bun — where the repo already uses it | `bun-release-changeset-oidc.yml` |
 
-Both already exist in `unional/.github`. If a repo uses a package manager the matching workflow does not cover, derive a new variant from the existing OIDC one and change only the auth — never start from the token-based workflow.
+Both exist in `unional/.github` **and** `cyberuni/.github`. A repo on yarn or npm converts first
+(**modernize-repo**, package-manager phase) rather than picking a third row.
+
+`pnpm-release-semantic-oidc.yml` and `yarn-release-semantic-oidc.yml` still exist so unmigrated
+repos keep publishing. **They are not destinations.** Do not point a repo at one, and do not
+reintroduce the retired rule that simple single-package repos take semantic-release.
+
+`cyberuni` has **no `yarn-*` workflows at all** — not verify, not release — so for an org-bound repo
+the conversion is a precondition of this step, not a later phase. Verified 2026-08-08; it is what
+blocked three repos in the first OTP batch. Confirm what the owner actually carries rather than
+assuming the two are the same:
+
+```bash
+gh api repos/<owner>/.github/contents/.github/workflows --jq '.[].name'
+```
+
+A repo living in the org should call the org's copy for **every** job, release and verify alike.
+Reaching into a personal namespace for the `code` job reintroduces the single point of failure the
+transfer removed.
+
+If a repo uses a package manager the matching workflow does not cover, derive a new variant from the existing OIDC one and change only the auth — never start from the token-based workflow.
 
 The caller grants permissions; the callee cannot exceed them.
 
@@ -98,18 +177,13 @@ The caller grants permissions; the callee cannot exceed them.
       pull-requests: write
 ```
 
-semantic-release needs two more, because `@semantic-release/github` comments on the issues and PRs a release closes:
+Declare the block even where the repo default is already `write`. It is least privilege, it works
+under either default, and it is what allows the default to be lowered to `read` afterwards — which
+is the end state. **Land the block before lowering the default**, never the reverse.
 
-```yaml
-  release:
-    uses: <owner>/.github/.github/workflows/yarn-release-semantic-oidc.yml@main
-    needs: code
-    permissions:
-      id-token: write
-      contents: write
-      issues: write
-      pull-requests: write
-```
+A repo still on semantic-release needs `issues: write` as well, because `@semantic-release/github`
+comments on the issues and PRs a release closes. Drop it when migrating — it is a reliable marker
+that a caller was never converted.
 
 Then confirm the repo's default token can grant that. A callee declaring `id-token: write` under a `read` default produces `startup_failure` with no logs at all:
 
@@ -192,6 +266,11 @@ Each is `gh-readonly-queue/main/pr-<N>-<base-sha>`. The second PR's base SHA sho
 - Do not bulk-apply `npm trust` without fail-fast; an auth fault affects every package and burns one 2FA code each.
 - Do not add a `merge_queue` rule before the `merge_group` trigger is on the default branch.
 - Do not assume a green release run published. Confirm with `npm view <pkg> version`.
+- Do not treat yarn or semantic-release as a destination. They are legacy states; migrate, or name the concrete blocker. "It currently works" is not one.
+- Do not point a repo at `pnpm-release-semantic-oidc.yml` or `yarn-release-semantic-oidc.yml`. They exist so unmigrated repos keep publishing, not to be selected.
+- Do not convert a bun repo to pnpm here. bun has both a verify and an OIDC release workflow, so it is supported; changing it is a separate decision.
+- Do not leave a changesets repo without a changeset for the change. The run goes green, publishes nothing, and the version never moves.
+- Do not lower `default_workflow_permissions` to `read` before every workflow's own `permissions:` block has landed.
 
 ## References
 

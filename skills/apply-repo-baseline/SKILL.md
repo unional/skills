@@ -31,6 +31,7 @@ Not for: authoring CI workflow content (that lives in each owner's `.github` rep
 | Security | repo, public only | `assets/security-settings.json` | `PATCH /repos/{o}/{r}` |
 | Actions token | repo | `actions-permissions.json` / `-inherit.json`, by whether the release caller declares `permissions:` — see § 5 | `PUT /repos/{o}/{r}/actions/permissions/workflow` |
 | Org defaults | org | `assets/org-settings.json` | `PATCH /orgs/{org}` |
+| Org code security default | org | § Org code security | `/orgs/{org}/code-security/configurations/{id}/defaults` |
 | Dependency automation | repo | `assets/renovate-preset.json` | files + `/repos/{o}/{r}/automated-security-fixes` |
 | Bypass and approval hardening | repo | § Hardening audit | rulesets + `/actions/permissions/workflow` |
 | File layout | repo | table in § File layout | files in the repo |
@@ -77,9 +78,38 @@ Start from `assets/branch-ruleset.json`. Then:
 - User asked for Copilot review, or the repo already has that ruleset → also reconcile `assets/copilot-review-ruleset.json` as a **separate** ruleset. Keep it separate; that is how the repos that have it are shaped, and it lets the review rule be dropped without touching protection.
 - Repo is org-owned and the user wants a queue → append `assets/rule-merge-queue.json` and flip `strict` off, under the preconditions below.
 
-#### Merge queue — opt-in, org-owned only
+#### Merge shape — MERGE, not SQUASH, and no linear history (revised 2026-08-09)
 
-Default off. `strict_required_status_checks_policy: true` is what the baseline ships, and it costs
+The owner wants **semi-linear** history: one merge commit per PR, individual commits preserved
+underneath. GitHub has no native semi-linear merge (requested since 2022, still unimplemented), so
+the closest enforceable approximation is:
+
+| setting | value |
+| --- | --- |
+| `allow_merge_commit` | `true` |
+| `allow_squash_merge`, `allow_rebase_merge` | `false` |
+| `merge_queue.merge_method` | `MERGE` |
+| `merge_queue.max_entries_to_merge` | `1` |
+| `required_linear_history` | **absent** |
+
+`required_linear_history` forbids merge commits outright, so "merge + linear" cannot coexist —
+leave it on and every queued merge is rejected. `max_entries_to_merge: 1` is deliberate: batching
+collapses several PRs into a single merge commit and destroys the per-PR boundary that is the whole
+point. Throughput is unaffected, because `max_entries_to_build: 5` still builds speculatively in
+parallel.
+
+Verified on `cyberuni/cyber-asana`: `git log --first-parent` is linear, individual PR commits remain
+visible, and a real `merge_group` run passed. **Still open:** whether `MERGE` rebases the second
+parent. The PR used to test was already up to date with `main`, so there was nothing to rebase —
+settling it needs a PR whose base moves while it is open.
+
+Do **not** offer SQUASH as the streamlining option. It does not reduce friction — the friction is
+the review rule and the approval gate, neither of which the merge method touches — and it discards
+the history the owner explicitly wants kept.
+
+#### Merge queue — recommended for every org-owned repo
+
+Not opt-in. `strict_required_status_checks_policy: true` is what the baseline ships, and it costs
 something: merging one PR makes every other PR stale, and nothing else in the baseline updates them.
 GitHub's native auto-merge waits for checks and **never** updates the branch; `allow_update_branch:
 true` in `repo-settings.json` is only a manual affordance. Renovate does resolve it — default
@@ -87,6 +117,13 @@ true` in `repo-settings.json` is only a manual affordance. Renovate does resolve
 protection — but at its polling cadence, and each rebase re-runs the full matrix, so draining N
 dependency PRs costs N + (N-1) + … full CI runs. A queue replaces that with one build per candidate
 against the real base.
+
+**Do not talk anyone out of a queue on the grounds that they work solo.** The queue's value is not
+conflict-serialization — it is that GitHub rebases and merges each PR **server-side** as the one
+ahead lands. Without it, something must watch `main` and rebase every other open PR: O(n²) rebase +
+CI cycles, and in an agent-driven fleet, O(n²) token spend on a local monitor holding credentials.
+Concurrency is also higher than it looks — `cyberuni/cyber-asana` had 7 PRs open at once (6
+Dependabot plus the version PR). Check `gh pr list` before asserting a repo is quiet.
 
 Three preconditions, in this order. Each is a hard gate, not a preference:
 
@@ -149,7 +186,7 @@ Invariants to enforce while diffing — these are couplings, not preferences:
 
 | Invariant | Why |
 |---|---|
-| `required_linear_history` ⇒ `allow_merge_commit: false` | The merge button produces a commit the ruleset rejects. `repo-settings.json` already sets this; never apply the ruleset without it. |
+| `required_linear_history` ⇔ **not** `allow_merge_commit` | Mutually exclusive, in both directions. The current baseline keeps merge commits, so `required_linear_history` must be **absent**; leave it on and every queued merge is rejected. If a repo is deliberately linear instead, then `allow_merge_commit: false` — but do not mix the two. |
 | `strict_required_status_checks_policy: true` ⇒ `allow_auto_merge: true` | Strict means "branch must be current". Without auto-merge every bot PR needs a manual update-and-wait. |
 | Callee `permissions:` ⊄ caller's granted set ⇒ `startup_failure` | The caller's granted set is its job `permissions:` block **if present, else the repo default**; a called workflow's declared `permissions:` must fit inside it. Overflow is rejected at resolution: **zero jobs, no logs, no annotation**, and the UI blames "a workflow file issue". `id-token: write` fits a default set only when that default is `write`. See § 5 — a block-less release caller under a `read` default is a hard failure, not a warning. |
 | `strict_required_status_checks_policy: true` ⇒ `allow_update_branch: true` | Strict makes a PR stale as soon as another merges, and GitHub auto-merge **does not update the branch**. Without this flag there is no affordance to update at all, so the PR waits on Renovate's next run. |
@@ -293,7 +330,7 @@ gh api orgs/<org>/installations --jq '.installations[]|{app:.app_slug,scope:.rep
 
 | Finding | Why it matters | Fix |
 |---|---|---|
-| No `pull_request` rule | Nothing requires review. CI passing is the entire merge gate, on a branch that auto-publishes | Add the rule with `required_approving_review_count: 1`. Admin bypass keeps a solo maintainer unblocked, so it costs nothing now and constrains collaborators later |
+| No `pull_request` rule | On a repo with **more than one** write-access actor, nothing requires review | Add the rule with `required_approving_review_count: 1`. **Do not add it to a solo repo** — see below |
 | `can_approve_pull_request_reviews: true` | A workflow can satisfy the review requirement itself, hollowing out the rule above | Set `false`; nothing in this baseline needs it |
 | `DeployKey` bypass with **zero** deploy keys | Reads as harmless and is — until someone adds a key, which then bypasses every rule silently | Remove the bypass actor. Re-add deliberately if a key is ever needed |
 | Apps installed org-wide (`repository_selection: "all"`) | A retired tool keeps posting checks on every repo in the org, including ones transferred in later. Removing its **config** does not stop it; only uninstalling does | Uninstall or re-scope at `/organizations/<org>/settings/installations`. **Human-only** — needs an app JWT or owner UI |
@@ -302,10 +339,169 @@ The first three constrain *other* actors, not the admin running the baseline. Sa
 report rather than implying the repo is now protected against its own owner's automation — that risk is
 governed by the auto-merge rule below, not by settings.
 
+#### The review rule costs more than "nothing" on a solo repo — verified 2026-08-09
+
+Earlier guidance here said admin bypass keeps a solo maintainer unblocked "so it costs nothing now".
+That is wrong on two counts, both established by adding the rule to all three reference repos and
+then removing it again.
+
+1. **Bypass does not apply to the path you actually use.** You cannot approve your own PR, so every
+   merge needs a bypass. `gh pr merge` returns `BLOCKED`, because with a queue it tries to *enqueue*
+   and enqueueing respects the requirement; only a direct `PUT /repos/{o}/{r}/pulls/{n}/merge`
+   bypasses. Every merge, forever, on every repo.
+2. **Bypass actors are per-ruleset and easy to omit.** `cyberuni/search-packages` had
+   `bypass_actors: []`. Adding the review rule locked the owner out of the repo entirely until
+   `RepositoryRole:5` was added. **Read `current_user_can_bypass` before adding this rule** — if it
+   is `never`, you are about to lock someone out.
+
+A control that is bypassed on 100% of merges is not a control. It trains the reflex to click through
+protection, which is exactly the habit you want intact when a rule *should* stop you.
+
+It also does **not** address the threat people reach for it to stop. An external contributor cannot
+merge their own PR regardless — they have no write access. The rule constrains write-access
+collaborators, of which a solo repo has none.
+
+Add it when a second write-access human appears. Not before.
+
+Note `RepositoryRole:2` is **triage**, which cannot push — a bypass entry for it grants nothing.
+Where you find one, it was almost certainly meant to be `4` (maintain).
+
 **Auto-merge rule.** Enable auto-merge only for PRs from branches **in the repo**, authored by the owner
 or the owner's automation, whose commit type cannot publish (`refactor:` / `chore:` / `ci:` / `test:` /
 `docs:`). Never a fork PR, whatever its title claims. A fork PR cannot enable auto-merge on itself — that
 needs write access — but the rule matters once more than one actor has it.
+
+## Org code security — do this once per org, before any repo work
+
+`assets/org-settings.json` covers Dependabot and secret scanning for new repos, but **not code
+scanning**. That one lives in a *code security configuration*, and without it every repo created in
+the org starts with no code scanning at all — silently, and forever, because nothing later notices.
+
+There are **many orgs** (28 as of 2026-08-09: cyberuni, repobuddy, justland, clibuilder, mocktomata,
+type-plus, standard-log, …). Sweep them rather than fixing one at a time:
+
+```bash
+for o in $(gh api user/orgs --jq '.[].login'); do
+  cur=$(gh api "orgs/$o/code-security/configurations/defaults" \
+        --jq 'if length==0 then "NONE" else ([.[].default_for_new_repos]|join(",")) end' 2>/dev/null)
+  [ "$cur" = "NONE" ] || { printf '%-22s already %s\n' "$o" "$cur"; continue; }
+  cid=$(gh api "orgs/$o/code-security/configurations" \
+        --jq '.[] | select(.name=="GitHub recommended") | .id' 2>/dev/null | head -1)
+  [ -n "$cid" ] || { printf '%-22s SKIP (no recommended config)\n' "$o"; continue; }
+  echo '{"default_for_new_repos":"all"}' \
+    | gh api -X PUT "orgs/$o/code-security/configurations/$cid/defaults" --input - >/dev/null
+  printf '%-22s set\n' "$o"
+done
+```
+
+Every org ships a GitHub-provided **"GitHub recommended"** configuration already — you do not create
+one. Applied across 26 orgs on 2026-08-09; two (`clean-code-projects`, `typings`) returned 403
+because the account is not an owner there. Report those rather than retrying.
+
+Three things that are easy to get wrong:
+
+- **`default_for_new_repos` only affects repos created afterwards.** It does nothing for existing
+  repos, each of which still needs the per-repo attach below. Setting the default and calling the
+  org done is the trap.
+- **A personal namespace has no configurations.** `unional` is a user, not an org, so the endpoint
+  404s. That is expected, not a failure — repos there get the baseline per repo.
+- **Do this before creating repos**, not after. It is the only part of the baseline that is
+  retroactively impossible to apply for free.
+
+## Code scanning is attached from the ORG, not set on the repo — 2026-08-09
+
+`PUT /repos/{o}/{r}/code-scanning/default-setup` returns **404**. That is not a permissions error,
+which is what makes it easy to misdiagnose — and it is also why the option cannot be found in the
+repo's own settings UI.
+
+Default setup is governed by an **org code security configuration**. Attach it:
+
+```bash
+gh api orgs/<org>/code-security/configurations --jq '.[] | {id, name, code_scanning_default_setup}'
+gh api -X POST "orgs/<org>/code-security/configurations/<id>/attach" \
+  --input <(echo '{"scope":"selected","selected_repository_ids":[<repo_id>]}')
+gh api "repos/$R/code-security-configuration" --jq .status   # attached | failed
+```
+
+The attach **fails while advanced setup exists** — a committed `codeql-analysis.yml` must be deleted
+**first**, then attached. Check `status`, not the HTTP code: the POST returns `{}` and 2xx even when
+the attach fails.
+
+Also set the configuration as the default for new repos, once per org — otherwise every repo created
+from now on starts with no scanning at all:
+
+```bash
+gh api -X PUT "orgs/<org>/code-security/configurations/<id>/defaults" \
+  --input <(echo '{"default_for_new_repos":"all"}')
+```
+
+**Verify with an analysis, not a state field.** `cyberuni/cyber-asana` reported
+`state: configured` with `languages: []`; the proof it was really running was
+`gh api "repos/$R/code-scanning/analyses?per_page=1"` showing 87 rules evaluated. That repo had **no
+code scanning for three weeks** after a commit deleted its CodeQL workflow "in favor of default
+setup" that was never enabled — a state that reads as healthy from every settings page.
+
+## Transitive advisories with no upgrade path — override, and date the override
+
+Check open alerts as part of the baseline, not just settings:
+
+```bash
+gh api "repos/$R/dependabot/alerts" --jq '.[] | select(.state=="open") |
+  {sev:.security_advisory.severity, pkg:.dependency.package.name,
+   scope:.dependency.scope, patched:.security_vulnerability.first_patched_version.identifier}'
+```
+
+`scope: runtime` on a published package means the advisory **ships to consumers**. Trace it before
+reaching for a fix — `pnpm why <pkg> -r` — because the usual case is a transitive dependency whose
+parent is already on its latest release, so bumping the direct dependency reaches nothing.
+
+Worked example (cyber-asana#157): four `hono` advisories, all runtime, arriving through
+`@modelcontextprotocol/sdk@1.30.0` — already the latest. The only route was a pnpm override:
+
+```yaml
+# pnpm-workspace.yaml  (pnpm 10+; not package.json)
+overrides:
+  hono: '>=4.12.34'
+```
+
+Two rules for overrides:
+
+- **Comment it with the advisory IDs and the exit condition** — "drop once the SDK depends on a
+  patched hono". An undated override silently outlives its purpose and pins a dependency for years.
+- **A published package needs a changeset.** The resolved dependency tree changes, so consumers get
+  the fix only if a release goes out. `patch` is right for a security bump.
+
+Verify by re-reading the alerts, not by the install succeeding — the four closed on merge.
+
+## Publish gate — the release PR is the last reviewable point
+
+Repos releasing with changesets should call the gate from `pull-request.yml`:
+
+```yaml
+  publish-gate:
+    if: startsWith(github.head_ref, 'changeset-release/')
+    uses: cyberuni/.github/.github/workflows/pnpm-publish-gate.yml@main
+    permissions:
+      contents: read
+```
+
+It diffs the tarball contents and runtime `dependencies` against the published version, **blocking**
+files that must never ship (tests, key material, `.env`, repo metadata) and new runtime deps, while
+**reporting without failing** on ordinary churn. Do not add it to the required contexts — it is
+skipped on every non-release PR, and a skipped check never satisfies a required one.
+
+**This is the argument for changesets over semantic-release, and it is a security argument, not a
+preference.** semantic-release publishes straight off a push to the default branch, so there is no
+point between "merged" and "on npm" where anything can be inspected — there is nowhere to put this
+gate. changesets splits it: a push only opens the Version Packages PR, and nothing publishes until
+that PR merges. **changesets is the standard, not the preferred option of two** — migrate every
+semantic-release repo rather than choosing per repo (worked example: cyberuni/color-map#212).
+The same applies to the package manager: pnpm, with bun kept where a repo already uses it.
+**setup-secretless-release** owns both migrations.
+
+When migrating off semantic-release: set the package `version` to the **currently published**
+version (replacing `0.0.0-development`), and give `CHANGELOG.md` a `# <package>` H1 — changesets
+inserts immediately after it, and without one the entries land in the wrong place.
 
 ## File layout
 
@@ -354,8 +550,22 @@ gh api "repos/$R/actions/permissions/fork-pr-contributor-approval"
 gh api "orgs/<org>/actions/permissions/fork-pr-contributor-approval"
 ```
 
-**Change nothing.** The gate is self-clearing after one approval and the policy is a sensible
-default; it is not a drift item and the baseline does not carry a setting for it.
+**Change nothing.** The policy is a sensible default; it is not a drift item and the baseline does
+not carry a setting for it.
+
+Two corrections from trying otherwise on 2026-08-09:
+
+- **Do not "harden" this to `all_external_contributors`.** It was tried on all three reference repos
+  and reverted. On a repo that has never had an external contributor, `first_time_contributors`
+  already gates *everyone*, so the stricter value buys nothing — while making the release PR's runs
+  need approval every time.
+- **"Self-clearing after one approval" is not reliable.** On `cyberuni/cyber-asana` the bot's runs
+  were still landing in `action_required` after several approvals and several merged version PRs.
+  Treat approving the release PR's runs as a recurring step, not a one-off.
+
+When clearing a backlog, **approve the newest run first**. Approving an older queued run last makes
+it start last and cancel the newer one through the shared concurrency group — which surfaces as a
+one-second "failure" on the required checks and looks like a broken workflow.
 
 Two dead ends, both tried and reverted on `unional/search-packages`:
 
@@ -377,11 +587,18 @@ checks are waiting.
 - Do not create a ruleset when one with that name exists — update it.
 - Do not require `code / all-checks` on a repo that does not produce it. Verify in step 2.
 - Do not apply this baseline to a repo still on a legacy CI shape. Route it to **migrate-legacy-ci** first.
-- Do not enable `required_linear_history` while merge commits are still allowed.
+- Do not enable `required_linear_history` while merge commits are still allowed — and note the current baseline keeps merge commits, so it should be absent.
+- Do not add a `pull_request` review rule to a repo with one write-access human. It is bypassed on every merge, and on a ruleset with empty `bypass_actors` it locks the owner out. Check `current_user_can_bypass` first.
+- Do not propose squash as a way to reduce friction. The friction is the review rule and the approval gate; the merge method is unrelated, and squash discards history the owner wants.
+- Do not set `code-scanning/default-setup` on the repo. It 404s. Attach the org code security configuration instead, after deleting any `codeql-analysis.yml`.
+- Do not trust `code-scanning/default-setup.state` as proof scanning runs. Check for a real analysis.
 - Do not hand-edit values into API payloads mid-run. If a default is wrong, change `assets/*.json` so the next repo gets it too.
 - Do not decide the Actions default from the callee's filename or from `secrets: inherit`. Read the caller for a `permissions:` block; that is the only thing that decides it.
 - Do not lower a repo to `read` before the caller's `permissions:` block has landed, and do not finish a run that leaves a block-less caller under `read`. That combination fails at resolution with no logs — report it as a failure rather than shipping a repo that looks fine.
 - Do not offer org-level rulesets. They need GitHub Team; these orgs are on free.
+- Do not set an org's code security default and call the org done. It applies only to repos created afterwards; existing repos each need the attach.
+- Do not treat a `403` on an org's code-security endpoints as a bug. It means the account is not an owner of that org — report it and move on.
+- Do not add a dependency override without the advisory IDs and an exit condition in a comment, or a changeset if the package is published.
 - Do not leave two updaters opening PRs for the same dependency, or two systems merging them.
 - Do not offer a merge queue on a user-owned repo. The rule is rejected with an empty error detail, which reads like a malformed payload and sends you looking in the wrong place.
 - Do not add the queue rule before `merge_group:` is on the workflow producing the required check. The queue then waits forever on a check that never starts.

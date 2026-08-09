@@ -5,7 +5,7 @@ description: "Replace a TypeScript library's build, lint, test and dependency st
 
 # Modernize Toolchain
 
-The build/lint/test half of **modernize-repo** (its phase 5). Everything here is internal to the repo — a separate concern from the release pipeline, settings and automation, which the other skills own.
+The build/lint/test half of **modernize-repo** (its phase 7). Everything here is internal to the repo — a separate concern from the release pipeline, settings and automation, which the other skills own.
 
 ## When to use
 
@@ -91,6 +91,20 @@ Specs lose `test` / `expect`; configs lose node builtins. Name them explicitly �
 
 A `jest-*` wildcard in `.depcheckrc.yaml` concealed four packages nothing referenced. **List ignores one package at a time.** Before upgrading any tool-adjacent dep, grep for it — if the only hit is its own `package.json` entry, delete it instead.
 
+### Skip the swap entirely when the package IS a jest plugin
+
+`jest-audio-reporter`, `jest-progress-tracker`, `jest-watch-repeat` and anything else whose
+*product* extends jest keep jest. It is their integration target, not a stale test-runner choice —
+swapping it would mean the package no longer runs against the thing it exists to extend.
+
+Every other step still applies to those repos: tsdown, biome, turbo, TypeScript 7, husky 9,
+commitlint 21, the dependency cull, and the whole release and settings baseline. Only the test
+runner is out of scope.
+
+Ask what the package *is* before applying this section. The same caution covers any repo that
+exists to extend a tool this skill would otherwise replace — an eslint plugin keeps eslint, a
+webpack loader keeps webpack.
+
 ### jest → vitest is usually near-free
 
 Check the spec surface first:
@@ -127,7 +141,7 @@ One PR, one commit per swap, so each is reviewable and revertible:
 4. `chore(deps):` the test-runner group
 5. `chore(deps):` TypeScript, on its own commit
 
-**The PR title is the release trigger** under squash-merge + semantic-release. See modernize-repo's phase 7 note; pick the type deliberately rather than defaulting to `feat:`.
+**A toolchain swap needs no changeset** — it changes nothing the published package exposes. Add one only if the emitted output actually changes. On a repo not yet migrated to changesets the commit messages decide instead, so pick the type deliberately rather than defaulting to `feat:`. See modernize-repo's phase 9 note.
 
 ## Proof
 

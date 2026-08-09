@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "unional",
+  "owner": {
+    "name": "unional"
+  },
+  "plugins": [
+    {
+      "name": "unional-skills",
+      "description": "Workflow orchestration, verification, and contribution skills for AI coding agents.",
+      "tags": ["workflow", "planning", "verification"],
+      "source": "."
+    }
+  ]
+}

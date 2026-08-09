@@ -1,0 +1,16 @@
+{
+  "name": "unional",
+  "interface": {
+    "displayName": "unional plugins"
+  },
+  "plugins": [
+    {
+      "name": "unional-skills",
+      "source": {
+        "source": "local",
+        "path": "."
+      },
+      "category": "Productivity"
+    }
+  ]
+}

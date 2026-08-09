@@ -91,6 +91,20 @@ Specs lose `test` / `expect`; configs lose node builtins. Name them explicitly �
 
 A `jest-*` wildcard in `.depcheckrc.yaml` concealed four packages nothing referenced. **List ignores one package at a time.** Before upgrading any tool-adjacent dep, grep for it — if the only hit is its own `package.json` entry, delete it instead.
 
+### Skip the swap entirely when the package IS a jest plugin
+
+`jest-audio-reporter`, `jest-progress-tracker`, `jest-watch-repeat` and anything else whose
+*product* extends jest keep jest. It is their integration target, not a stale test-runner choice —
+swapping it would mean the package no longer runs against the thing it exists to extend.
+
+Every other step still applies to those repos: tsdown, biome, turbo, TypeScript 7, husky 9,
+commitlint 21, the dependency cull, and the whole release and settings baseline. Only the test
+runner is out of scope.
+
+Ask what the package *is* before applying this section. The same caution covers any repo that
+exists to extend a tool this skill would otherwise replace — an eslint plugin keeps eslint, a
+webpack loader keeps webpack.
+
 ### jest → vitest is usually near-free
 
 Check the spec surface first:

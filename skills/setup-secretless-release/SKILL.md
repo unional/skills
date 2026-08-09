@@ -16,6 +16,33 @@ Converts a release pipeline from long-lived secrets to OIDC trusted publishing, 
 
 Not for: converging repo settings onto a baseline (**apply-repo-baseline**), or authoring the reusable workflow content itself (that lives in the owner's `.github` repo).
 
+## Prefer changesets over semantic-release — it is a security boundary
+
+This skill supports both, but they are not equivalent, and the difference decides whether a
+publish can be inspected at all.
+
+- **semantic-release publishes straight off a push to the default branch.** Nothing sits between
+  "merged" and "on npm". There is no artifact to review and nowhere to attach a check.
+- **changesets splits the release in two.** A push only opens or updates the Version Packages PR;
+  nothing publishes until that PR merges. That PR is the only reviewable view of the next release,
+  and it is where **pnpm-publish-gate** diffs the tarball contents and runtime dependencies against
+  the published version.
+
+So when a repo could go either way, choose changesets. When a semantic-release repo comes through
+this skill, offer the migration (worked example: cyberuni/color-map#212):
+
+- set `version` to the **currently published** version, replacing `0.0.0-development`
+- add a `# <package>` H1 to `CHANGELOG.md` — changesets inserts right after it, and without one the
+  entries land in the wrong place
+- drop `issues: write` from the release caller; only semantic-release needs it
+- the trusted publisher names `release.yml`, which does not change — no npm-side reconfiguration
+
+There is a second, non-security reason under the current merge baseline: semantic-release derives
+the release type from **commit messages**, so with merge commits every branch commit is analyzed and
+a stray `feat:` in a WIP commit cuts an unintended release. changesets ignores commit messages.
+
+Accepted cost either way: a changesets release requires remembering to write a changeset.
+
 ## Prerequisites
 
 | Requirement | Check |

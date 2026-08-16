@@ -4,6 +4,7 @@
   "owner": {
     "name": "unional"
   },
+  "description": "unional's personal skills for managing repos and organizations — workflow orchestration, verification, and contribution chores.",
   "plugins": [
     {
       "name": "unional-skills",

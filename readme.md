@@ -24,24 +24,31 @@ When a skill here turns out to be useful beyond my own repos, it graduates to on
 
 ## Skills
 
+Each skill has its own README with the full description and install command.
+
 | Skill | Description |
 | ----- | ----------- |
-| **apply-repo-baseline** | Bring a repo or org up to my standard baseline — branch ruleset, merge/Actions settings, security toggles, CI layout. Also audits drift across many repos. |
-| **migrate-legacy-ci** | Decide what to do with a repo still on the old `nodejs.yml` pipeline — archive it, drop its CI, or migrate to the `pull-request.yml` + `release.yml` split. Run before the baseline. |
-| **community-proposal** | Contribute a design proposal to an open-source community — research, draft with evidence, file. |
-| **workflow-planning** | Plan-first for non-trivial tasks. Write to `tasks/todo.md`, track progress, re-plan when things go sideways. |
-| **verification-before-done** | Never claim a task complete without evidence. Run tests, linter, build. |
-| **autonomous-bug-fixing** | Fix bugs without hand-holding. Bug report → investigate → fix → verify. No clarification loops. |
-| **subagent-strategy** | Use subagents for research, exploration, and parallel work. Keep main context clean. |
-| **self-improvement-loop** | Capture corrections in `tasks/lessons.md`. Review at session start. Prevent repeat mistakes. |
-| **demand-elegance** | Pause on non-trivial changes to ask for a more elegant solution. Pragmatism for trivial work. |
-| **add-changeset** | Add the right changeset to a change. Detects affected packages in monorepos, chooses bump type, writes changelog-ready summaries. |
-| **setup-changesets** | Initialize changesets in a repo. Handles single packages and monorepos. Optionally creates a shared reusable workflow in a `<user/org>/.github` repo. |
-| **setup-secretless-release** | Move a changesets or semantic-release pipeline off `NPM_TOKEN`/PAT secrets onto OIDC trusted publishing, and make dependency PRs merge without manual rebases. Diagnoses pipelines that stopped publishing. |
-| **transfer-repo-to-org** | Move a repo from a personal namespace into an org without breaking its next release. Re-registers the npm trusted publisher that pins `owner/repo`, fixes metadata, unlocks the merge queue. |
-| **audit-release-health** | Sweep an owner's repos for the ones that stopped publishing, grouped by root cause with the evidence to act. Produces the worklist `modernize-repo` works. |
+| **[modernize-repo](skills/modernize-repo)** | Bring one repo fully current in a single pass. Orchestrates the skills below in the order their dependencies require; each phase gates the next. |
+| **[audit-release-health](skills/audit-release-health)** | Sweep an owner's repos for the ones that stopped publishing, grouped by root cause with the evidence to act. Produces the worklist `modernize-repo` works. |
+| **[migrate-legacy-ci](skills/migrate-legacy-ci)** | Decide what to do with a repo still on the old `nodejs.yml` pipeline: archive it, drop its CI, or migrate to the `pull-request.yml` + `release.yml` split. Run before the baseline. |
+| **[apply-repo-baseline](skills/apply-repo-baseline)** | Bring a repo or org up to my standard baseline: branch ruleset, merge/Actions settings, security toggles, CI layout. Also audits drift across many repos. |
+| **[setup-secretless-release](skills/setup-secretless-release)** | Move a release off `NPM_TOKEN`/PAT secrets onto OIDC trusted publishing, migrating to pnpm + changesets on the way, and make dependency PRs merge without manual rebases. |
+| **[transfer-repo-to-org](skills/transfer-repo-to-org)** | Move a repo from a personal namespace into an org without breaking its next release. Re-registers the npm trusted publisher that pins `owner/repo`, fixes metadata, unlocks the merge queue. |
+| **[modernize-toolchain](skills/modernize-toolchain)** | Replace a TypeScript library's build, lint, test and dependency stack in one pass: tsdown, biome, turbo, vitest. Deletes before it upgrades. |
+| **[technical-writer](skills/technical-writer)** | One documentation standard: controlled plain prose, one home per fact, every external claim backed by a source. Also audits an existing corpus. |
 
 ## Installation
+
+### From the marketplace (Claude Code)
+
+The repo is its own single-plugin marketplace, declared in `.claude-plugin/marketplace.json`:
+
+```
+/plugin marketplace add unional/skills
+/plugin install unional-skills@unional
+```
+
+The marketplace is named `unional` and the plugin `unional-skills`, which is where the `@` form comes from.
 
 ### As a plugin
 
@@ -54,26 +61,19 @@ The whole set ships as one universal plugin. Manifests are generated for each ru
 | Codex | `.codex-plugin/plugin.json` |
 | GitHub Copilot CLI | `plugin.json` (repo root) |
 
-Try it locally by linking the repo into a runtime's local plugin directory:
-
-```bash
-ln -sf "$(pwd)" ~/.claude/plugins/local/unional-skills   # Claude Code
-ln -sf "$(pwd)" ~/.cursor/plugins/local/unional-skills   # Cursor → Developer: Reload Window
-```
-
 The canonical source is `.plugin/plugin.json`; regenerate every vendor manifest with `npx universal-plugin plugin build`. Never edit a generated manifest by hand.
 
 ### As individual skills
 
 ```bash
 # Install a specific skill
-npx skills add unional/skills --skill add-changeset
+npx skills add unional/skills --skill technical-writer
 
 # Install globally (available across all projects)
-npx skills add unional/skills --skill add-changeset -g
+npx skills add unional/skills --skill technical-writer -g
 
 # Install for a specific agent
-npx skills add unional/skills --skill workflow-planning -a claude-code
+npx skills add unional/skills --skill modernize-repo -a claude-code
 
 # Install all skills
 npx skills add unional/skills --all

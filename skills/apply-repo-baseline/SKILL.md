@@ -28,6 +28,7 @@ Not for: authoring CI workflow content (that lives in each owner's `.github` rep
 | Merge queue | repo, org-owned only | `assets/rule-merge-queue.json` — a rule inside the `main` ruleset, see § 3 | same |
 | Copilot review | repo, opt-in | `assets/copilot-review-ruleset.json` | same |
 | Merge settings | repo | `assets/repo-settings.json` | `PATCH /repos/{o}/{r}` |
+| About panel | repo, Pages only | § About panel | `PATCH /repos/{o}/{r}` |
 | Security | repo, public only | `assets/security-settings.json` | `PATCH /repos/{o}/{r}` |
 | Actions token | repo | `actions-permissions.json` / `-inherit.json`, by whether the release caller declares `permissions:` — see § 5 | `PUT /repos/{o}/{r}/actions/permissions/workflow` |
 | Org defaults | org | `assets/org-settings.json` | `PATCH /orgs/{org}` |
@@ -315,6 +316,33 @@ gh api "repos/$R/actions/permissions/workflow" --jq .default_workflow_permission
 
 `read` **and** a release caller with no `permissions:` block is a failed run, not a clean one. Say
 so in the report and leave the repo listed as broken until one side is fixed.
+
+## About panel — half of it is API-reachable, half is not
+
+The **Edit repository details** dialog mixes two kinds of setting, and only one can be automated.
+Verified against REST `PATCH /repos/{o}/{r}` and GraphQL `UpdateRepositoryInput` on 2026-08-16.
+
+**"Use your GitHub Pages website" — automatable.** The checkbox is not a flag; it copies the Pages
+site URL into the plain `homepage` field. So the whole module is one PATCH, gated on three reads:
+
+```bash
+gh api "repos/$R" --jq '{fork:.fork, has_pages, homepage}'
+pages=$(gh api "repos/$R/pages" --jq .html_url 2>/dev/null)   # 404 when Pages is off
+[ -n "$pages" ] && gh api -X PATCH "repos/$R" -f homepage="$pages"
+```
+
+Set it only when `has_pages` is true **and** `homepage` is empty or already that URL, and never on a
+fork. A non-empty homepage that points somewhere else is a deliberate choice — the marketplace
+listing on `vscode-sort-package-json`, the docs domain on `axi`, upstream's own site on every
+fork — and overwriting it with a Pages URL is a silent downgrade. Leave it and report the mismatch.
+
+**"Include in the home page → Packages" (and Releases, Deployments) — not automatable.** These three
+checkboxes have no REST field and no GraphQL input field; `UpdateRepositoryInput` carries only
+`homepageUrl` and the `has*Enabled` toggles. There is no *read* path either, so drift cannot even be
+detected. Do not claim the box was unchecked, and do not fabricate a field name to PATCH — an
+unknown key is accepted and ignored, so the call returns 200 and changes nothing. Report it as a
+one-line manual step on the repo's main page (**Edit repository details** → uncheck **Packages**)
+and move on.
 
 ## Hardening audit — four things the ruleset alone does not cover
 

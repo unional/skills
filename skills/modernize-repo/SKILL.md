@@ -52,6 +52,8 @@ Two couplings matter for what follows: a repo whose release uses OIDC needs `def
 
 **GitHub Projects is off by default** (`has_projects: false` in `assets/repo-settings.json`). Issues are where the work is tracked; a repo-level Projects tab nobody curates is one more stale surface. Turn it back on only when the repo actually runs a board, and say so. This toggle only governs the repo's own Projects tab — org- or user-level Projects (v2) linked to the repo are unaffected, so disabling it does not orphan an existing board.
 
+The About panel is part of the same phase: where the repo has Pages and no deliberate homepage, point `homepage` at the Pages URL. The **Include in the home page → Packages** checkbox has no API at all, so it ends up in the report as a manual step rather than something this pass can do or verify. Both are in the baseline's § About panel.
+
 ### 4. Package manager — convert to pnpm
 
 **pnpm is the standard, and yarn or npm is a legacy state to migrate, not a property to preserve.**

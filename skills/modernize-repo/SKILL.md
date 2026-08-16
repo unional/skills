@@ -50,6 +50,8 @@ Invoke **apply-repo-baseline**. Check mode first, apply after showing the diff.
 
 Two couplings matter for what follows: a repo whose release uses OIDC needs `default_workflow_permissions: write`, and `strict_required_status_checks_policy` must be `false` if a merge queue is coming.
 
+**GitHub Projects is off by default** (`has_projects: false` in `assets/repo-settings.json`). Issues are where the work is tracked; a repo-level Projects tab nobody curates is one more stale surface. Turn it back on only when the repo actually runs a board, and say so. This toggle only governs the repo's own Projects tab — org- or user-level Projects (v2) linked to the repo are unaffected, so disabling it does not orphan an existing board.
+
 ### 4. Package manager — convert to pnpm
 
 **pnpm is the standard, and yarn or npm is a legacy state to migrate, not a property to preserve.**

@@ -8,5 +8,6 @@
 	"merge_commit_title": "PR_TITLE",
 	"merge_commit_message": "PR_BODY",
 	"has_issues": true,
+	"has_projects": false,
 	"has_wiki": false
 }

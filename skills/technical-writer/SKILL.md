@@ -19,9 +19,9 @@ Never treat length alone as a defect.
 
 ## Where it belongs
 
-If the project defines a skill named `doc-placement`, load it by name first. It states where each kind of document lives in that project, which facts are owned by which page, and where the source of truth for generated tables sits.
+Read `LOOKUP.DOC.md` first if the project has one. Check the repository root, then `.agents/`. It holds pointers only: where the authority for each kind of claim lives, and which source files generated tables must match.
 
-If no such skill exists, infer the homes from the repository layout, and state which homes you assumed before you move anything.
+Most repositories will not have one, and a flat repository does not need one — infer the homes from the layout instead, and state which you assumed before you move anything.
 
 Give every load-bearing fact (one that other pages depend on) exactly one home. Link to that home from every other page. Two copies of a fact drift, because a change lands in one and misses the other.
 

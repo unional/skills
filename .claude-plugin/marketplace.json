@@ -10,7 +10,7 @@
       "name": "unional-skills",
       "description": "Workflow orchestration, verification, and contribution skills for AI coding agents.",
       "tags": ["workflow", "planning", "verification"],
-      "source": "."
+      "source": "./"
     }
   ]
 }

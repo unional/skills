@@ -21,9 +21,9 @@ Never treat length alone as a defect.
 
 Read `LOOKUP.DOC.md` first if the project has one. Check the repository root, then `.agents/`. It holds pointers only: where the authority for each kind of claim lives, and which source files generated tables must match.
 
-Most repositories will not have one, and a flat repository does not need one — infer the homes from the layout instead, and state which you assumed before you move anything.
+Most repositories will not have one, and a flat repository does not need one. Infer the homes from the layout instead, and state which you assumed before you move anything.
 
-Give every load-bearing fact (one that other pages depend on) exactly one home. Link to that home from every other page. Two copies of a fact drift, because a change lands in one and misses the other.
+Give every load-bearing fact (one that other pages depend on) exactly one home. Link to that home from every other page. Two copies of a fact drift: a change lands in one and misses the other.
 
 Most documentation toolchains do not validate internal links, and hand-maintained navigation does not update itself. So:
 
@@ -45,7 +45,7 @@ If the project has a glossary, it is the authority for terms. Add a new term the
 
 ## Fix the rhythm and structure
 
-A generated draft has a flat rhythm. Every sentence lands in the same length band, and every paragraph runs the same number of sentences. The reader loses track of what is being emphasized, because nothing is.
+A generated draft has a flat rhythm. Every sentence lands in the same length band, and every paragraph runs the same number of sentences. Nothing stands out, and the reader cannot tell what matters.
 
 Vary the length on purpose:
 
@@ -66,7 +66,7 @@ Then apply the deletion test. Remove a paragraph and reread. If nothing was lost
 
 ## Delete the tell words
 
-Some words mark a draft as unedited. Each one also costs precision, which is the reason to cut it.
+Some words mark a draft as unedited. Each one also costs precision. Cut them.
 
 Delete on sight: delve, tapestry, realm, landscape, journey, testament, beacon, cornerstone, seamless, robust, crucial, pivotal, vital, comprehensive, meticulous.
 
@@ -85,8 +85,10 @@ Treat this as a starting set. Add the words your own drafts overuse, and remove 
 Do not use em dashes in prose you write. Each one has a better replacement:
 
 - A claim followed by its explanation takes a colon.
-- An aside takes parentheses, or a pair of commas.
+- An aside takes parentheses. Use a pair of commas when the aside is short enough to read inline.
 - Two joined independent clauses become two sentences.
+
+The colon replacement is unsafe inside YAML frontmatter. An unquoted scalar ends at the first `: `, so a colon added there truncates the value or breaks the parse. Inside frontmatter, quote the whole value or split the sentence in two.
 
 Leave em dashes in quoted material, code samples, and command output.
 
@@ -114,7 +116,7 @@ Write for the reader, not for a detector. A detector score is not the goal, and 
 
 ## Auditing an existing corpus
 
-Run the cheapest probes first.
+Run the cheapest probes first. The commands below assume a git repository and POSIX tools; substitute the project's own file listing and shell where they do not apply.
 
 1. **Size outliers.** List the largest documents and read the list as a prompt for judgment, not a verdict.
 

@@ -1,7 +1,7 @@
 {
 	"$schema": "https://raw.githubusercontent.com/cyberuni/universal-plugin/refs/heads/main/schema/v1.json",
 	"name": "unional-skills",
-	"version": "1.0.0",
+	"version": "1.1.0",
 	"description": "Workflow orchestration, verification, and contribution skills for AI coding agents — plan-first execution, evidence-backed completion, autonomous bug fixing, subagent strategy, and changeset management.",
 	"author": {
 		"name": "unional"

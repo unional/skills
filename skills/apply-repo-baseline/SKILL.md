@@ -263,7 +263,18 @@ Verified 2026-08-08: `unional/stable-context` (`read`, no block → `startup_fai
 `clibuilder/clibuilder` (`read` **with** block → success), and `cyberuni/search-packages`
 (block present → works, and would work under `read` too).
 
-`can_approve_pull_request_reviews: false` is unconditional.
+`can_approve_pull_request_reviews: true` on any repo that releases through **changesets**.
+
+GitHub conflates *create* and *approve* behind this one flag, so `false` does not merely stop a
+workflow approving its own PR — it stops the changesets action opening the Version PR at all. All
+five batch-1 releases failed identically on this before the cause was found (2026-08-09). The two
+`assets/actions-permissions*.json` ship `true` for that reason.
+
+Set `false` only on a repo with no workflow that opens PRs. Check before lowering:
+
+```bash
+grep -rlE 'changesets/action|peter-evans/create-pull-request' .github/workflows/
+```
 
 ### 6. Dependency automation — one updater, not three
 
@@ -359,8 +370,9 @@ gh api orgs/<org>/installations --jq '.installations[]|{app:.app_slug,scope:.rep
 | Finding | Why it matters | Fix |
 |---|---|---|
 | No `pull_request` rule | On a repo with **more than one** write-access actor, nothing requires review | Add the rule with `required_approving_review_count: 1`. **Do not add it to a solo repo** — see below |
-| `can_approve_pull_request_reviews: true` | A workflow can satisfy the review requirement itself, hollowing out the rule above | Set `false`; nothing in this baseline needs it |
-| `DeployKey` bypass with **zero** deploy keys | Reads as harmless and is — until someone adds a key, which then bypasses every rule silently | Remove the bypass actor. Re-add deliberately if a key is ever needed |
+| `can_approve_pull_request_reviews: true` **on a repo with no PR-opening workflow** | A workflow can satisfy the review requirement itself, hollowing out the rule above | Set `false` — but only after the grep in §5 comes back empty. On a changesets repo `true` is required, not a finding |
+| `DeployKey` bypass with **zero** deploy keys | Reads as harmless and is — until someone adds a key, which then bypasses every rule silently | Remove the bypass actor. Re-add deliberately if a key is ever needed. `assets/branch-ruleset.json` no longer ships one |
+| `RepositoryRole` bypass actor `2` | Role `2` is **triage**, which has no push access, so the bypass grants nothing and reads as if it does. Usually a typo for `4` (maintain) | Drop it. The asset ships `5` (admin) alone |
 | Apps installed org-wide (`repository_selection: "all"`) | A retired tool keeps posting checks on every repo in the org, including ones transferred in later. Removing its **config** does not stop it; only uninstalling does | Uninstall or re-scope at `/organizations/<org>/settings/installations`. **Human-only** — needs an app JWT or owner UI |
 
 The first three constrain *other* actors, not the admin running the baseline. Say that plainly in the

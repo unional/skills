@@ -13,7 +13,7 @@ Most of a repo's configuration survives a transfer. The parts that do not fail o
 
 The skill re-registers the npm trusted publisher that pins `owner/repo`, fixes package metadata and badges still pointing at the old location, and turns on the merge queue that only org-owned repos can have. It captures the before state so the after state can be diffed against it; `references/state-diff.md` records what actually changes.
 
-Proven end to end on `unional/search-packages` moving to `cyberuni/search-packages`, which then published `2.2.1` over OIDC and merged through a native queue.
+Proven end to end on `unional/search-packages` moving to `cyberuni/search-packages`, which then published `2.2.1` over OIDC and merged through a native queue, then rerun as a batch of five in August 2026. The batch is what turned up the ruleset bypass actors a transfer empties, which deadlock the next release.
 
 ## Install
 

@@ -7,7 +7,7 @@ description: "Move a repo from a personal namespace into an organization without
 
 Moves one repo from a user namespace to an organization and repairs everything the transfer silently invalidates. Most of the repo's configuration survives; the parts that do not fail on the *next release*, not on the transfer, which is why this is a procedure and not a single API call.
 
-Proven end to end on `unional/search-packages` → `cyberuni/search-packages`, which then published `2.2.1` via OIDC and merged through a native queue.
+Proven end to end on `unional/search-packages` → `cyberuni/search-packages`, which then published `2.2.1` via OIDC and merged through a native queue. Rerun as a batch of five `unional/*` → `cyberuni/*` on 2026-08-24, which is where the ruleset finding in Step 6 came from: one repo is not enough to tell what a transfer drops, because a setting the repo never used looks identical whether it survived or not.
 
 ## When to use
 
@@ -20,9 +20,13 @@ Not for: creating the org, converging settings onto the baseline (**apply-repo-b
 
 ## Sequencing decision, before anything else
 
-**Transfer before registering trusted publishing.** The trust config pins `owner/repo`; registering first means revoking and re-adding it afterwards, which costs a 2FA code and an interactive login. If trust is not yet registered, transfer now and let **setup-secretless-release** step 4 register against the new owner — Step 4 below then does not apply.
+**Transfer before registering trusted publishing.** Register trust for the owner the repo will *have*, not the one it has now. The trust config pins `owner/repo`, so registering first means revoking and re-adding it afterwards, which costs a 2FA code and an interactive login. Worse, a registration aimed at the new owner while the repo still sits under the old one returns `E404 PUT`: that is npm's unauthenticated-write signature, and it reads as a broken workflow rather than a sequencing mistake. Batch 2 lost time to it.
+
+If trust is not yet registered, transfer now and let **setup-secretless-release** register against the new owner; Step 4 below then does not apply.
 
 If trust is already registered, it must be redone in the same sitting. See the trap.
+
+**Transferring several repos at once? Transfer them all first.** A transfer needs no 2FA code, and the code's budget is per window rather than per call, so one code covers every `npm trust list` / `revoke` / `github` round for the whole batch. **setup-secretless-release** carries the registration mechanics, including the equals form of `--otp=<code>` and the stale config to expect on every package.
 
 ## The trap
 
@@ -93,15 +97,18 @@ The closing `npm trust list` showing the new `owner/repo` is the only evidence t
 
 ## Step 5 — Verify what the transfer changed
 
-Diff against Step 2. One field is known to change:
+Diff against Step 2. Two things are known to change:
 
 | | outcome |
 | --- | --- |
-| Ruleset, including bypass actors | survives |
+| Ruleset name, target, enforcement, and rules | survive |
+| Ruleset **bypass actors** | **emptied** (Step 6) |
 | `allow_auto_merge`, `allow_update_branch`, `delete_branch_on_merge` | survive |
-| Repo secrets | survive |
+| Repo secrets, webhooks, deploy keys | survive (stated in GitHub's transfer docs) |
 | Old URLs, including git remotes | redirect |
 | `default_workflow_permissions` | **resets to the org default** |
+
+The two bold rows were observed across all five repos of the 2026-08-24 batch. The "survive" rows rest on the single proving repo plus, for secrets, GitHub's own documentation. Treat them as expected rather than guaranteed, and diff instead of trusting the table.
 
 OIDC needs `write`, so check it every time even when the org default is supposedly right:
 
@@ -112,7 +119,26 @@ gh api -X PUT repos/<org>/<r>/actions/permissions/workflow -f default_workflow_p
 
 A `read` default produces `startup_failure` with zero jobs and no logs on the next release — see **setup-secretless-release**'s `references/failure-catalogue.md`.
 
-## Step 6 — Redo the references to the old location
+## Step 6 — Put the ruleset bypass actors back
+
+Every ruleset came back from the 2026-08-24 batch with `bypass_actors: []`. All five. The rules themselves were intact, nothing in the UI flagged the list as changed, and no check started failing, so the repo read as healthy.
+
+It bricks at the first release instead. A secretless Version PR is opened with the built-in `GITHUB_TOKEN`, which fires no `pull_request` workflows, so it carries **zero checks**. `code / all-checks` is required. With the bypass list empty there is nobody left who can merge it: an org owner pressing the button gets `Repository rule violations found`. Re-running CI cannot help, because there is no CI to re-run. The release sits there until someone restores the actor. Why the secretless Version PR carries no checks, and why a merge queue or a same-named commit status does not rescue it, belongs to **setup-secretless-release**.
+
+A repo still releasing through the PAT variant gets checks on its Version PR and so survives the empty list. That is a reprieve, not an exemption: the OIDC migration is what removes the checks, and the two changes usually land in the same sitting.
+
+Restore it in the same sitting as the transfer, by replaying what Step 2 captured:
+
+```bash
+gh api repos/<org>/<r>/rulesets/<id> --jq '.bypass_actors'     # [] after the transfer
+jq '{bypass_actors}' /tmp/rulesets-before.json | \
+  gh api -X PUT repos/<org>/<r>/rulesets/<id> --input -
+gh api repos/<org>/<r>/rulesets/<id> --jq '.bypass_actors'     # verify, do not assume
+```
+
+All five repos took back `RepositoryRole:5`, the admin role, which is the actor a changesets Version PR needs. Read the captured list before you push it: an entry naming a team or a GitHub App is scoped to the old owner and its id means something else, or nothing, in the org.
+
+## Step 7 — Redo the references to the old location
 
 Redirects cover URLs; text embedded in published artifacts does not follow them.
 
@@ -123,13 +149,13 @@ Redirects cover URLs; text embedded in published artifacts does not follow them.
 
 Add a changeset. `repository` metadata is user-visible in the published package, so the move earns a patch entry rather than riding along silently — use **add-changeset**.
 
-## Step 7 — Merge queue, now that it is available
+## Step 8 — Merge queue, now that it is available
 
 The ruleset API accepts a `merge_queue` rule **only for org-owned repos** — under a user it fails with `Invalid rule 'merge_queue':` and no detail. The transfer is what unlocks it.
 
-Order matters and reversing it strands every PR: land the `merge_group` trigger on the default branch first, then add the rule. Full procedure in **setup-secretless-release** step 6.
+Order matters and reversing it strands every PR: land the `merge_group` trigger on the default branch first, then add the rule. Full procedure in **setup-secretless-release**'s merge-queue step.
 
-## Step 8 — First release after the transfer
+## Step 9 — First release after the transfer
 
 Expect the version PR's runs to sit in `action_required`. In the new location `github-actions[bot]` has no merged commit, so the `first_time_contributors` policy holds its runs — the same one-time approval a fresh repo needs, re-armed by the move.
 
@@ -151,6 +177,8 @@ npm view <package>@<version> dist.attestations
 - Do not register trusted publishing before a transfer you already know is coming.
 - Do not choose the target org for the user, or infer it from where their other repos live.
 - Do not assume `default_workflow_permissions` survived; it takes the org default.
+- Do not read "the rulesets are still there" as "the rulesets are intact". The bypass actors are gone, and a checkless Version PR then has no way to merge.
+- Do not register a trusted publisher for the new owner before the repo is under it. `E404 PUT` is the sequencing error, not an auth fault.
 - Do not rely on the URL redirect for `package.json` metadata — provenance records what the file says.
 - Do not add a `merge_queue` rule before the `merge_group` trigger is on the default branch.
 - Do not treat the transfer as done until a release has published from the new owner.

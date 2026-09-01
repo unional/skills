@@ -98,6 +98,96 @@ Not a CI or auth problem. Reproduce locally with the package's own build script.
 
 Fix the verify failure before assuming anything about publishing. Note this **masks** downstream faults: a repo can be missing its PAT and never show it because verify fails earlier.
 
+## `E403` on a version that already exists
+
+**Signature** — `npm error 403 ... cannot publish over previously published versions`, from the
+publish step of a run that otherwise looks healthy.
+
+Two distinct causes, and the fix differs:
+
+1. **The repo's `version` was lowered below the registry.** Someone "corrected" a version that was
+   ahead of npm. Read the registry and set `version` back to at least `latest`; see the skill's
+   Step 3.
+2. **npm 12 under changesets CLI 2.x.** npm 12 wraps `npm info --json` in an array
+   (changesets/changesets#2164), so changesets reads every published version as unpublished and tries
+   to publish the lot. The caller is on `@v1` of the reusable release workflow, which installs
+   `npm@latest`. Move the caller to `@v2`, which pins `npm@11`.
+
+**Confirm** which one by reading the registry and comparing:
+
+```bash
+curl -s -H "Accept: application/vnd.npm.install-v1+json" https://registry.npmjs.org/<pkg> \
+  | jq -r '."dist-tags".latest'
+grep -rn 'uses:.*release-changeset' .github/workflows/
+```
+
+## `TypeError` in `getUnpublishedPackages`
+
+**Signature** — the publish step throws a `TypeError` inside changesets' `getUnpublishedPackages`, on
+a **pnpm workspace** running changesets CLI 3.x.
+
+Same root cause as the `E403` above. CLI 3 fixed the npm code path for npm 12's array-wrapped
+`npm info --json` output and did not fix the pnpm one. Pin npm by moving the caller off `@v1`.
+
+## changesets action and CLI major mismatch
+
+**Signature** — the release job fails at the changesets action itself, before any publish, on a repo
+whose config and credentials are all correct.
+
+`changesets/action@v2.x` requires `@changesets/cli` v3, and `action@v1` pairs with cli v2. Check both
+ends; the action version lives in the reusable workflow, the CLI version in the repo.
+
+**Fix** — move both to the current pair. The CLI upgrade is **setup-changesets**' job, not this one.
+
+## Formatter detector resolves to a formatter that is not installed
+
+**Signature** — `changeset version` fails on the default branch after a changesets v3 upgrade, naming
+a formatter binary. Green on the PR that introduced it, because PR CI never runs `changeset version`.
+
+The v3 `format` option replaced `prettier` (changesets/changesets#1994) and auto-detection walks a
+fixed order that puts prettier last, so the failure is "the detected formatter is not installed", not
+"a prettier config exists". A `biome.json` beside a dead `.prettierrc` is harmless; a biome repo
+missing `@biomejs/biome` fails identically. Three repos hit this.
+
+**Fix** — install the formatter the repo actually uses, or set `format` explicitly. Option semantics
+live in **setup-changesets**.
+
+## `Invalid tree: "<pkg>" depends on the skipped package "<pkg>"`
+
+**Signature** — `changeset version` hard-fails on a monorepo after a changesets v3 upgrade.
+
+`@changesets/config@4` flipped the `privatePackages` default from `{version: true, tag: false}` to
+`{version: false, tag: false}`. A publishable package depending on a private one is now an invalid
+tree. The reverse direction is still fine.
+
+Its quieter twin: a workspace whose packages are **all** private now processes nothing and exits 0.
+The release **fails green** and the version never moves.
+
+**Fix** — restore `"privatePackages": { "version": true, "tag": false }` in `.changeset/config.json`.
+
+## Publish gate blocks a package nobody publishes
+
+**Signature** — the release job is skipped because the publish gate failed, and the gate names a
+package that is not in the workspace, or lists runtime dependencies as new that the package has had
+for years.
+
+The gate walks the tree for every non-private `package.json` rather than parsing the workspace globs,
+so `old/`, `archive/`, `examples/` and template payloads all count. It also diffs runtime dependencies
+against the published `latest`, which can be years stale — `@unional/create-monorepo@0.1.0` from 2019
+declared its whole toolchain under `dependencies`, so the current six read as four new ones.
+
+**Fix** — add `private: true` to the out-of-workspace manifest. For the dependency diff there is no
+per-package allowlist, so confirm the current dependencies are correct and say so in the PR.
+
+## `E404 PUT` when registering a trusted publisher
+
+**Signature** — `npm trust github <pkg>` returns `E404` on a `PUT`, with a valid OTP and a package
+that plainly exists.
+
+`E404` on a write is npm's unauthenticated-write signature. The usual cause is registering for the
+owner the repo is *moving to* while it still sits under the old one. Transfer first, then register —
+and note that chasing this as a workflow fault costs another 2FA code.
+
 ## Sweeping an owner's repos
 
 ```bash

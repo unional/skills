@@ -45,7 +45,8 @@ The difference decides whether a publish can be inspected at all.
 Every semantic-release repo that comes through this skill gets migrated (worked example:
 cyberuni/color-map#212):
 
-- set `version` to the **currently published** version, replacing `0.0.0-development`
+- reconcile `version` against the registry (Step 3). `0.0.0-development` is the placeholder shape, but
+  the reconciliation is not migration-specific and repos already on changesets need it too
 - add a `# <package>` H1 to `CHANGELOG.md` — changesets inserts right after it, and without one the
   entries land in the wrong place
 - drop `issues: write` from the release caller; only semantic-release needs it
@@ -106,6 +107,8 @@ Read the failing job's **name and duration** first — they identify the class f
 | `401 Unauthorized - GET .../-/whoami` | `NPM_TOKEN` expired or revoked |
 | `ENONPMTOKEN: No npm token specified` **after** migrating | Not a token problem — OIDC was never reached. See the failure catalogue |
 | `Publish command exited with code 1` | Real failure in the publish step — read further, do not assume auth |
+| `E403 cannot publish over previously published versions` | Either `version` was lowered below the registry, or the caller is on `@v1` and got npm 12 |
+| Release skipped, publish gate red, everything else green | The tarball or its runtime dependencies changed. PR CI never runs this gate |
 
 Load `references/failure-catalogue.md` for the full set with worked examples.
 
@@ -126,7 +129,7 @@ Two capabilities are unavailable to repos owned by a **user** rather than an org
 
 If the repo publishes and its owner has a suitable org, transferring removes the root cause instead of routing around it. Confirm the target org with the user — never pick one for them.
 
-Transferring is fine mid-migration, but **re-register trusted publishing immediately after** (Step 4): the config pins `owner/repo` and silently stops matching.
+Transferring is fine mid-migration, but **re-register trusted publishing immediately after** (Step 5): the config pins `owner/repo` and silently stops matching.
 
 ```bash
 gh api -X POST repos/<o>/<r>/transfer -f new_owner=<org>
@@ -134,7 +137,87 @@ gh api -X POST repos/<o>/<r>/transfer -f new_owner=<org>
 
 Then update `repository`, `homepage`, and `bugs` in `package.json` — `repository` is read when generating provenance.
 
-## Step 3 — Point the release at a secretless workflow
+## Step 3 — Reconcile the package against the registry
+
+Run this on **every** repo, including one already on changesets and needing no migration at all.
+Nothing below is visible to PR CI, and the first two have shipped broken packages to npm.
+
+First, read the registry directly. `npm view` answers from a cache that was observed serving the
+previous version for minutes after a publish, so it is not sound for any before-and-after check:
+
+```bash
+curl -s -H "Accept: application/vnd.npm.install-v1+json" https://registry.npmjs.org/<pkg> \
+  | jq -r '."dist-tags".latest'
+```
+
+### The `version` field has three shapes, and only one is left alone
+
+changesets bumps whatever `package.json` already says. It never consults the registry, so a wrong
+starting version publishes exactly as written.
+
+| `version` is | What the next release does | Do |
+| --- | --- | --- |
+| a placeholder — `0.0.0-development` | publishes the literal stub, and npm moves `dist-tags.latest` onto it | set it to the registry's `latest` |
+| behind the registry — repo `7.1.1`, npm `7.2.0` | cuts `7.1.2`, which is older than what is published | set it to the registry's `latest` |
+| ahead of the registry — repo `0.2.2`, npm `0.1.0` | cuts forward; correct as it stands | **leave it.** Lowering it queues an `E403 cannot publish over previously published versions` |
+
+Reconcile in the same PR that introduces changesets or first uses it, not in a follow-up.
+
+Two production incidents, both on repos that were **already** on changesets and so skipped every
+migration instruction: `fsa-emitter` published `0.0.0` and it took `latest`, and `satisfier` published
+`0.0.0-development` and held `latest` for two weeks.
+
+Behind-the-registry is a history artifact rather than carelessness. A repo that went
+standard-version → semantic-release → changesets loses versions on the way: standard-version commits
+the bump back, and semantic-release derives the version from tags and deliberately does not. Tags
+`v7.1.2` and `v7.2.0` then both point at commits whose `package.json` still reads `7.1.1`. Move the
+version and leave `CHANGELOG.md` alone. Do not fabricate entries for releases that never generated one.
+
+### Audit the published tarball
+
+Two seconds per package, and it catches defects that PR CI structurally cannot see:
+
+```bash
+url=$(curl -s -H "Accept: application/vnd.npm.install-v1+json" https://registry.npmjs.org/<pkg> \
+  | jq -r '.versions[."dist-tags".latest].dist.tarball')
+curl -sL "$url" | tar tzf - | grep -iE '\.(spec|test)\.|LICENSE'
+```
+
+**No licence text, five packages.** All five declare a licence in `package.json` and ship none.
+`jest-watch-repeat@3.0.2`, `find-installed-packages@4.0.0` and `@type-plus/kind` keep `LICENSE` only
+at the monorepo root, and npm packs relative to the *package* directory. `sort-configs`,
+`sort-configs-typescript` and all seven `create` packages have no `LICENSE` file in the repository at
+all.
+
+**Tests in the tarball, three packages**, every one from `files` naming a raw source directory:
+`files: ["dist", "ts"]` takes that whole tree. `jest-watch-repeat`, `jest-audio-reporter@2.2.3`,
+`test-progress-tracker@2.0.6`. The robust form keeps sources for debuggers and excludes the suffixes:
+
+```json
+"files": ["dist", "src", "!**/*.{spec,test,unit,accept,integrate,system,perf,stress,study,stories}.*"]
+```
+
+The reverse also happens: `color-map-rainbow` shipped no typings because `files` was `["dist"]` and
+npm auto-includes `main` but not `typings`.
+
+### Run the publish gate locally before opening the PR
+
+`publish-gate-cli.mjs` packs the working tree and diffs it against the registry. It is a `needs:` of
+the release job, so a block stops the release with everything else green, and `code / all-checks`
+never runs it — the PR is not where this surfaces. It has caught four real defects so far: a bad
+tarball, shipped specs twice, a missing licence, and a self-referential runtime dependency.
+
+Two of its behaviours surprise people, and both block on something that is not a defect:
+
+- **It walks the tree for every non-private `package.json` rather than parsing the workspace globs.**
+  An out-of-workspace directory — `old/`, `archive/`, `examples/`, a template payload — trips it on a
+  package changesets would never publish. Add `private: true` to that manifest.
+- **It diffs runtime dependencies against the published `latest`, which may be years stale.**
+  `@unional/create-monorepo@0.1.0` (2019) declared its whole toolchain under `dependencies`, so local
+  `0.2.2`'s six real dependencies read as four new ones. There is no per-package allowlist, so the
+  judgement is yours: compare against what the package needs now, not against 2019.
+
+## Step 4 — Point the release at a secretless workflow
 
 There are only two destinations, because the target is pnpm + changesets:
 
@@ -194,7 +277,50 @@ gh api -X PUT repos/<o>/<r>/actions/permissions/workflow -f default_workflow_per
 
 Add the secretless workflow **alongside** the token-based one in the `.github` repo rather than replacing it, so repos that have not migrated keep working.
 
-## Step 4 — Register trusted publishers
+### Which ref the caller pins, and why `@v1` is now a hazard
+
+The ref is not cosmetic. `@v1` of the changeset release workflows runs `npm install -g npm@latest`;
+only `@v2` and `@main` pin `npm@11`. npm 12 went stable on 2026-07-08 and wraps `npm info --json` in
+an array (changesets/changesets#2164), which breaks publishing under **both** changesets CLI majors:
+
+| changesets CLI | What npm 12 does to it |
+| --- | --- |
+| 2.x | every version reads as unpublished, so it republishes and dies on `E403` |
+| 3.x | the npm path is fixed, the pnpm one is not — a pnpm workspace gets a `TypeError` in `getUnpublishedPackages` |
+
+Three repos were exposed on `@v1` under one major or the other. Move them off it.
+
+Between the remaining two, `@main` lands every upstream change in every repo at once; that is how one
+`pnpm-verify` playwright bug reached five repos in a day. A moving major tag (`@v2`) is the middle
+ground. Advancing that tag for a bugfix is normal, but read the interface diff before you point
+repos at it:
+
+```bash
+gh api repos/<owner>/.github/compare/v2...main
+```
+
+**Pinning the caller does not pin what the workflow calls.** `pnpm-verify.yml` references
+`setup-playwright@main` internally, so that composite still floats however tightly every caller is
+pinned. Treat a pinned caller as reducing the blast radius, not removing it.
+
+### The changesets action and CLI versions are a matched pair
+
+`changesets/action@v2.x` requires `@changesets/cli` v3; `action@v1` is the pair for cli v2. Batch 2's
+first merge died on that mismatch, and it dies at release time because the Version PR is the first
+place the action runs.
+
+Two v3 changes are worth knowing here because **PR CI cannot see either one** — both surface only
+when `changeset version` runs on the default branch:
+
+- the `prettier` option became `format`, and the detector picks the first installed formatter from a
+  fixed order that puts prettier **last**. Three repos died on it.
+- the `privatePackages` default flipped to `{version: false, tag: false}`, which hard-fails a
+  publishable package that depends on a private one, and silently no-ops an all-private workspace.
+
+Both signatures are in `references/failure-catalogue.md`. The config itself, including the migration
+and the option semantics, belongs to **setup-changesets** — do the upgrade there and come back.
+
+## Step 5 — Register trusted publishers
 
 Per **package name**, not per repo — a monorepo publishing four packages needs four registrations. `--file` names the **caller** workflow (`release.yml`); npm validates the entry point, not the reusable workflow it delegates to.
 
@@ -206,14 +332,26 @@ npm trust list <package>
 `--otp=<code>` must use the equals form: `npm trust github` takes a positional package name and otherwise consumes the code as that positional. `-y` skips the confirmation prompt but not the 2FA challenge.
 
 One config per package — changing an existing one needs `npm trust revoke <pkg> --id=<id>` first.
+**Expect to need that on every package**, not on the odd one: batch 1 found a stale config on five of
+five. Run `npm trust list` before `npm trust github` and revoke what is already there.
+
+### Budget the OTP per window, not per repo
+
+A 2FA code is good for the window, not for a single call — one code registered four packages across
+three calls each. So sequence the whole batch around the code rather than around the repo:
+
+1. **Transfer every repo first.** A transfer needs no OTP, and a registration made while the repo is
+   still under the old owner returns `E404 PUT`. That is the unauthenticated-write signature, not a
+   fault in the workflow you just wrote, and chasing it as one costs another code.
+2. Then chain every `npm trust list` / `revoke` / `github` call for the batch onto one code.
 
 For more than a handful of packages, use the **setup-npm-trusted-publishing** skill (repobuddy), which derives package names from the workspace layout and fails fast on auth errors instead of spending one code per package.
 
-## Step 5 — First release after migrating
+## Step 6 — First release after migrating
 
 Registering trust is additive: token publishing keeps working until explicitly disallowed, so the migration is not a cutover and can be verified before removing anything.
 
-**semantic-release publishes straight from the default branch with no version PR.** Everything below, plus Step 6's ruleset concerns, is changesets-specific — skip it. What a semantic-release repo gets instead is one hazard of its own: the first release on a **maintenance** branch (`1.32.x`) fails `E401` on `npm dist-tag add`, because trusted publishers are not yet allowed to set dist-tags (semantic-release/npm#1023, npm/cli#8547 — both open). A re-run succeeds. Default-branch releases are unaffected, so do not treat this as a failed migration.
+**semantic-release publishes straight from the default branch with no version PR.** Everything below, plus Step 7's ruleset concerns, is changesets-specific — skip it. What a semantic-release repo gets instead is one hazard of its own: the first release on a **maintenance** branch (`1.32.x`) fails `E401` on `npm dist-tag add`, because trusted publishers are not yet allowed to set dist-tags (semantic-release/npm#1023, npm/cli#8547 — both open). A re-run succeeds. Default-branch releases are unaffected, so do not treat this as a failed migration.
 
 The changesets "Version Packages" PR needs a **one-time workflow approval**. Its `pull_request` runs do fire, but land in `action_required` under the `first_time_contributors` policy until `github-actions[bot]` has a merged commit in that repo — so no required check reports and the PR looks checkless.
 
@@ -224,7 +362,7 @@ gh api -X POST repos/<o>/<r>/actions/runs/<id>/approve
 
 After that merge the bot is a known contributor and later version PRs run unattended. Delete the `NPM_TOKEN` secret only once a release has published through OIDC.
 
-## Step 6 — Merge queue, if the repo is org-owned
+## Step 7 — Merge queue, if the repo is org-owned
 
 Order matters; reversing it strands every PR.
 
@@ -243,7 +381,7 @@ Order matters; reversing it strands every PR.
 
 Without a queue the trailing PR still resolves, just slower: Renovate's default `rebaseWhen: auto` detects a strict requirement (it reads rulesets, not only legacy branch protection) and rebases on its next run.
 
-## Step 7 — Validate with two PRs
+## Step 8 — Validate with two PRs
 
 Open two trivial PRs touching **different files**, arm auto-merge on both, and read the queue branch names:
 
@@ -256,7 +394,7 @@ Each is `gh-readonly-queue/main/pr-<N>-<base-sha>`. The second PR's base SHA sho
 
 ## What NOT to do
 
-- Do not fabricate a required check with a no-op workflow to get a checkless PR through. Approve the runs instead (Step 5).
+- Do not fabricate a required check with a no-op workflow to get a checkless PR through. Approve the runs instead (Step 6).
 - Do not try an `on: push` workflow watching `changeset-release/**`. `GITHUB_TOKEN` genuinely does suppress `push` events, so it cannot fire.
 - Do not treat trusted publishing as per repo, or point `--file` at the reusable workflow.
 - Do not install semantic-release unpinned in a secretless workflow. An old core resolves an old `@semantic-release/npm` that predates trusted publishing, and the OIDC path is skipped silently.
@@ -265,7 +403,16 @@ Each is `gh-readonly-queue/main/pr-<N>-<base-sha>`. The second PR's base SHA sho
 - Do not enable "Require 2FA and disallow tokens" in the same pass as registering trust, before any OIDC publish has succeeded.
 - Do not bulk-apply `npm trust` without fail-fast; an auth fault affects every package and burns one 2FA code each.
 - Do not add a `merge_queue` rule before the `merge_group` trigger is on the default branch.
-- Do not assume a green release run published. Confirm with `npm view <pkg> version`.
+- Do not assume a green release run published. Confirm against the registry (Step 3), not with
+  `npm view` — its cache served the pre-publish version for minutes afterwards.
+- Do not lower a `version` that is ahead of the registry. It reads as a typo and it queues an `E403`.
+- Do not treat the version reconciliation as part of the semantic-release migration. Both production
+  incidents were on repos already using changesets.
+- Do not leave a caller on `@v1` of a changeset release workflow. It installs `npm@latest`, and npm 12
+  breaks publishing under both changesets CLI majors.
+- Do not read a publish-gate block as a bad tarball before checking what it packed. An out-of-workspace
+  `package.json` without `private: true` blocks a release for a package nobody publishes.
+- Do not spend one OTP code per package or per repo. Transfer everything first, then chain the calls.
 - Do not treat yarn or semantic-release as a destination. They are legacy states; migrate, or name the concrete blocker. "It currently works" is not one.
 - Do not point a repo at `pnpm-release-semantic-oidc.yml` or `yarn-release-semantic-oidc.yml`. They exist so unmigrated repos keep publishing, not to be selected.
 - Do not convert a bun repo to pnpm here. bun has both a verify and an OIDC release workflow, so it is supported; changing it is a separate decision.
@@ -275,7 +422,9 @@ Each is `gh-readonly-queue/main/pr-<N>-<base-sha>`. The second PR's base SHA sho
 ## References
 
 - `references/failure-catalogue.md` — release-failure classes with worked examples and diagnostic commands
+- **setup-changesets** — the changesets config itself, including the v2 → v3 upgrade this skill only pairs versions for
 - https://docs.npmjs.com/trusted-publishers/ — trusted publisher concepts
+- https://github.com/changesets/changesets/issues/2164 — npm 12 wraps `npm info --json` in an array; the root of the `@v1` publish failures
 - https://github.com/semantic-release/npm/issues/1069 — `ENONPMTOKEN` under correct OIDC config; closed as a resolution/`.npmrc` fault, not a plugin bug
 - https://github.com/npm/cli/issues/8547 — trusted publishers cannot `npm dist-tag add`; the root of the maintenance-branch `E401`
 - https://docs.npmjs.com/cli/v11/commands/npm-trust/ — `npm trust` subcommands and flags

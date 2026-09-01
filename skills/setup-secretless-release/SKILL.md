@@ -175,7 +175,7 @@ version and leave `CHANGELOG.md` alone. Do not fabricate entries for releases th
 
 ### Audit the published tarball
 
-Two seconds per package, and it catches defects that PR CI structurally cannot see:
+One command per package, and it catches defects that PR CI structurally cannot see:
 
 ```bash
 url=$(curl -s -H "Accept: application/vnd.npm.install-v1+json" https://registry.npmjs.org/<pkg> \
@@ -205,7 +205,9 @@ npm auto-includes `main` but not `typings`.
 `publish-gate-cli.mjs` packs the working tree and diffs it against the registry. It is a `needs:` of
 the release job, so a block stops the release with everything else green, and `code / all-checks`
 never runs it — the PR is not where this surfaces. It has caught four real defects so far: a bad
-tarball, shipped specs twice, a missing licence, and a self-referential runtime dependency.
+tarball, shipped specs twice, a missing licence, and the `"<pkg>": "link:"` a local `pnpm link .`
+wrote into `eslint-plugin-harmony`'s own runtime dependencies (**modernize-toolchain** owns that
+mechanism).
 
 Two of its behaviours surprise people, and both block on something that is not a defect:
 
@@ -353,14 +355,45 @@ Registering trust is additive: token publishing keeps working until explicitly d
 
 **semantic-release publishes straight from the default branch with no version PR.** Everything below, plus Step 7's ruleset concerns, is changesets-specific — skip it. What a semantic-release repo gets instead is one hazard of its own: the first release on a **maintenance** branch (`1.32.x`) fails `E401` on `npm dist-tag add`, because trusted publishers are not yet allowed to set dist-tags (semantic-release/npm#1023, npm/cli#8547 — both open). A re-run succeeds. Default-branch releases are unaffected, so do not treat this as a failed migration.
 
-The changesets "Version Packages" PR needs a **one-time workflow approval**. Its `pull_request` runs do fire, but land in `action_required` under the `first_time_contributors` policy until `github-actions[bot]` has a merged commit in that repo — so no required check reports and the PR looks checkless.
+### The Version PR looks checkless either way, for two different reasons
+
+The "Version Packages" PR reports nothing on both sides of this migration, and the two causes need
+opposite responses. **Which one you have is decided by the workflow the repo now calls**, so read
+that first rather than the symptom:
+
+| Release workflow | How the PR is opened | What reports |
+| --- | --- | --- |
+| `pnpm-release-changeset.yml` — token variant | `checkout` `token:` and `github-token:` are the `CI_GITHUB_TOKEN` **PAT** | runs fire, then wait in `action_required` |
+| `pnpm-release-changeset-oidc.yml` — secretless | the built-in **`GITHUB_TOKEN`** | **nothing at all** |
+
+**On the token variant the PR needs a one-time workflow approval.** Its `pull_request` runs do fire,
+but land in `action_required` under the `first_time_contributors` policy until `github-actions[bot]`
+has a merged commit in the repo:
 
 ```bash
 gh run list --repo <o>/<r> --status action_required
 gh api -X POST repos/<o>/<r>/actions/runs/<id>/approve
 ```
 
-After that merge the bot is a known contributor and later version PRs run unattended. Delete the `NPM_TOKEN` secret only once a release has published through OIDC.
+After that merge the bot is a known contributor and later version PRs run unattended.
+
+**On the secretless workflow that remedy does not apply, and there is no run to approve.** A PR
+opened with `GITHUB_TOKEN` does not trigger `on: pull_request` workflows at all; the `-oidc`
+workflow says so in its own header comment. So under a required-check ruleset the Version PR is
+permanently `BLOCKED` and merges only by **admin override**. All five batch-2 repos were merged that
+way. Budget for it as a standing cost of the migration rather than a fault to diagnose — a reader
+following the `action_required` path here will hunt for a run that does not exist.
+
+Three exits look open and are not. Do not spend a session re-deriving them:
+
+- **A head-branch exemption.** Rulesets key on the **target** ref, so `changeset-release/**` cannot be
+  exempted.
+- **A merge queue.** A PR must pass its required checks before it can be queued, so the queue is
+  downstream of the block.
+- **A same-named commit status posted by another job.** A check and a status sharing one name must
+  **both** pass, so this adds a second thing to satisfy rather than satisfying the first.
+
+Delete the `NPM_TOKEN` secret only once a release has published through OIDC.
 
 ## Step 7 — Merge queue, if the repo is org-owned
 
@@ -394,7 +427,10 @@ Each is `gh-readonly-queue/main/pr-<N>-<base-sha>`. The second PR's base SHA sho
 
 ## What NOT to do
 
-- Do not fabricate a required check with a no-op workflow to get a checkless PR through. Approve the runs instead (Step 6).
+- Do not fabricate a required check with a no-op workflow to get a checkless PR through. On the token
+  variant, approve the runs (Step 6). On the secretless one, override as admin and say so.
+- Do not hunt for an `action_required` run on a secretless Version PR. `GITHUB_TOKEN` opened it, so no
+  run was ever created.
 - Do not try an `on: push` workflow watching `changeset-release/**`. `GITHUB_TOKEN` genuinely does suppress `push` events, so it cannot fire.
 - Do not treat trusted publishing as per repo, or point `--file` at the reusable workflow.
 - Do not install semantic-release unpinned in a secretless workflow. An old core resolves an old `@semantic-release/npm` that predates trusted publishing, and the OIDC path is skipped silently.

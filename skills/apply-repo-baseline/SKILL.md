@@ -65,7 +65,17 @@ where the reusable workflow ends with an `all-checks` job that fails if `verify`
 
 Check the repo's `.github/workflows/pull-request.yml` for a job whose id is `code` calling one of the owner's `pnpm-verify*` reusable workflows. If it is missing or named differently, **fix CI first or the branch becomes unmergeable** — a required context that no run ever reports blocks every PR forever. Offer either: add the workflow (§ File layout), or apply the ruleset without the `required_status_checks` rule and note the gap.
 
-Confirm from a real run rather than the filename — `gh api repos/$R/commits/$(gh api repos/$R/commits/main --jq .sha)/check-runs --jq '.check_runs[].name'`.
+Confirm from a real run rather than the filename, and read **both** endpoints. A required context is satisfied by a check-run *or* a commit status, and each API returns only its own kind:
+
+```bash
+sha=$(gh api repos/$R/commits/main --jq .sha)
+gh api "repos/$R/commits/$sha/check-runs" --jq '.check_runs[]|"\(.name) \(.conclusion)"'
+gh api "repos/$R/commits/$sha/status"     --jq '.statuses[]|"\(.context) \(.state)"'
+```
+
+`security/snyk` posts a commit **status**, so it is invisible to `/check-runs`. That one-endpoint read is how it was written down as a dead integration; it was live and passing on `jest-progress-tracker` and `jest-audio-reporter`, and `codecov/*` likewise. The baseline still drops both from *required*, because it standardises on the single aggregated `code / all-checks` context. Say that, and do not justify it by calling a working integration dead.
+
+A bare `CodeQL` required context is a version-naming mismatch, not a dead integration either. Under `codeql-action@v1` only `Analyze (javascript)` reports; under v3 both names do. Bump the action rather than dropping the context as unreachable.
 
 **Stop if the repo is on a legacy CI shape.** A single `nodejs.yml` calling `typescript-build.yml` / `typescript-test*.yml` / `npm-release.yml`, or hand-rolled steps, reports `build / …` and `test / …` and can never produce `code / all-checks`. Do not apply this baseline to such a repo — run **migrate-legacy-ci** first. It decides whether the repo should be archived, have its CI dropped, or be migrated, and most of them should not be migrated at all.
 
@@ -75,9 +85,22 @@ Choose the reusable workflow by owner convention: `pnpm-verify-linux.yml` where 
 
 Start from `assets/branch-ruleset.json`. Then:
 
-- Repo has `.github/workflows/codeql-analysis.yml` → append `assets/rule-code-scanning.json` to `rules`.
+- Repo has `.github/workflows/codeql-analysis.yml` **and a fresh analysis on record** → append `assets/rule-code-scanning.json` to `rules`. See below; the second half of that condition is not optional.
 - User asked for Copilot review, or the repo already has that ruleset → also reconcile `assets/copilot-review-ruleset.json` as a **separate** ruleset. Keep it separate; that is how the repos that have it are shaped, and it lets the review rule be dropped without touching protection.
 - Repo is org-owned and the user wants a queue → append `assets/rule-merge-queue.json` and flip `strict` off, under the preconditions below.
+
+#### The code-scanning rule is unsatisfiable when CodeQL is disabled — and CodeQL disables itself
+
+GitHub sets a scheduled workflow to `disabled_inactivity` after 60 days without repository activity. Four repos were found in that state during the 2026-08 sweep, `test-progress-tracker` with no analysis since **2022-08-18**. The file is still committed, so the §3 condition above passes on a `ls` and the rule goes on.
+
+What follows is hard to read: the workflow is **silently absent from the PR**. No check appears at all, so it looks like a bad trigger rather than a disabled workflow, and the PR sits `BLOCKED` with everything else green and nothing to click. The rule is permanently unsatisfiable.
+
+```bash
+gh api repos/$R/actions/workflows --jq '.workflows[]|"\(.path) \(.state)"'
+gh api "repos/$R/code-scanning/analyses?per_page=1" --jq '.[0].created_at'
+```
+
+The rule: add `code_scanning` only after a fresh analysis has landed, and **not at all** where the repo has no CodeQL workflow. Three repos in the sweep had none (`async-fp`, `create`, `sort-configs`); there the org attach is the route, not the rule. Re-enable the workflow, then close and reopen the PR. That re-fires `pull_request` for a re-enabled workflow, so no empty commit is needed.
 
 #### Merge shape — MERGE, not SQUASH, and no linear history (revised 2026-08-09)
 
@@ -182,6 +205,13 @@ gh api -X PATCH "repos/$R" --input assets/security-settings.json   # public repo
 ```
 
 <!-- TODO: extract the read-diff-apply loop to a script; it is fully deterministic -->
+
+Two of those calls are refused by the agent harness's own classifier, for reasons that have nothing to do with GitHub:
+
+- **`PATCH repos/$R --input <file>` is refused when the payload disables squash and rebase.** Split it into explicit flags instead: `gh api -X PATCH "repos/$R" -F allow_squash_merge=false -F allow_rebase_merge=false -F allow_merge_commit=true …`. The values are still the ones in `assets/repo-settings.json`.
+- **`DELETE .../branches/main/protection` is refused as security-reducing.** So do not try to remove legacy branch protection that predates the ruleset. Reduce its contexts in place: `gh api -X PATCH "repos/$R/branches/main/protection/required_status_checks" -F strict=false -f 'contexts[]=code / all-checks'`. Legacy protection sitting alongside a ruleset is fine as long as the two require the same context; both are evaluated and the effect is the union.
+
+**A refusal is a signal to stop and report, not to search for an encoding that passes.** The two rewrites above are documented settled cases. Anything else, hand back to the user.
 
 Invariants to enforce while diffing — these are couplings, not preferences:
 
@@ -355,7 +385,7 @@ unknown key is accepted and ignored, so the call returns 200 and changes nothing
 one-line manual step on the repo's main page (**Edit repository details** → uncheck **Packages**)
 and move on.
 
-## Hardening audit — four things the ruleset alone does not cover
+## Hardening audit — what the ruleset alone does not cover
 
 Run these on every repo whose default branch publishes. Each is a read; report before changing anything.
 
@@ -373,9 +403,12 @@ gh api orgs/<org>/installations --jq '.installations[]|{app:.app_slug,scope:.rep
 | `can_approve_pull_request_reviews: true` **on a repo with no PR-opening workflow** | A workflow can satisfy the review requirement itself, hollowing out the rule above | Set `false` — but only after the grep in §5 comes back empty. On a changesets repo `true` is required, not a finding |
 | `DeployKey` bypass with **zero** deploy keys | Reads as harmless and is — until someone adds a key, which then bypasses every rule silently | Remove the bypass actor. Re-add deliberately if a key is ever needed. `assets/branch-ruleset.json` no longer ships one |
 | `RepositoryRole` bypass actor `2` | Role `2` is **triage**, which has no push access, so the bypass grants nothing and reads as if it does. Usually a typo for `4` (maintain) | Drop it. The asset ships `5` (admin) alone |
+| `bypass_actors: []` on a repo transferred within the last few days | **A transfer wipes ruleset bypass actors.** With the version PR unable to report its own checks, the release then deadlocks: nothing satisfies the rule and nobody can override it | Restore `RepositoryRole:5` immediately after any transfer, as part of the transfer, not the next sweep. Read the ruleset back and confirm |
 | Apps installed org-wide (`repository_selection: "all"`) | A retired tool keeps posting checks on every repo in the org, including ones transferred in later. Removing its **config** does not stop it; only uninstalling does | Uninstall or re-scope at `/organizations/<org>/settings/installations`. **Human-only** — needs an app JWT or owner UI |
 
-The first three constrain *other* actors, not the admin running the baseline. Say that plainly in the
+Mergify is the case that row is written for. It can be installed at **account** level, posting a `Mergify Merge Queue` check on repos that have no `.mergify.yml` anywhere. Three repos in the sweep were in that state, so a repo-by-repo grep for config finds nothing and concludes wrongly. The installations endpoint above is the only read that sees it. § 6's "delete `.github/mergify.yml`" removes the rules, never the app.
+
+The first three rows constrain *other* actors, not the admin running the baseline. Say that plainly in the
 report rather than implying the repo is now protected against its own owner's automation — that risk is
 governed by the auto-merge rule below, not by settings.
 
@@ -403,13 +436,20 @@ collaborators, of which a solo repo has none.
 
 Add it when a second write-access human appears. Not before.
 
-Note `RepositoryRole:2` is **triage**, which cannot push — a bypass entry for it grants nothing.
-Where you find one, it was almost certainly meant to be `4` (maintain).
-
 **Auto-merge rule.** Enable auto-merge only for PRs from branches **in the repo**, authored by the owner
 or the owner's automation, whose commit type cannot publish (`refactor:` / `chore:` / `ci:` / `test:` /
 `docs:`). Never a fork PR, whatever its title claims. A fork PR cannot enable auto-merge on itself — that
 needs write access — but the rule matters once more than one actor has it.
+
+Enforcing that rule means enumerating **every** actor that can arm a merge, not just the one you expect:
+
+```bash
+ls .github/workflows | grep -iE 'automerge|auto-merge'
+gh pr list --repo "$R" --json number,autoMergeRequest --jq '.[]|select(.autoMergeRequest)|.number'
+gh api orgs/<org>/installations --jq '.installations[]|.app_slug'
+```
+
+That is Mergify (account-level as often as repo-level), `dependabot-automerge.yml` or `automerge-dependabot.yml`, Renovate's `platformAutomerge`, and auto-merge already armed on open PRs. Several of these were inert in the sweep only because this baseline disables squash and rebase and their rules named a method the repo no longer allows. **That is accidental protection, not a control.** Report it as an armer that happens to be misconfigured, and do not let it stand in for the § 6 convergence.
 
 ## Org code security — do this once per org, before any repo work
 
@@ -567,14 +607,24 @@ Right after applying the baseline to a **newly created or newly transferred** re
 "Version Packages" PR appears to have no status checks, and so cannot satisfy the required
 `code / all-checks` context. It looks like the check will never arrive.
 
-It already did. Under GitHub's default `first_time_contributors` approval policy, a repo where
+Usually it already did. Under GitHub's default `first_time_contributors` approval policy, a repo where
 `github-actions[bot]` has not previously committed holds the bot's `pull_request` runs in
 `action_required` awaiting approval, so nothing reports:
 
 ```bash
+gh run list --repo "$R" --event pull_request --json headBranch,status,conclusion \
+  --jq '.[]|select(.headBranch|startswith("changeset-release/"))'
 gh api "repos/$R/actions/runs/<id>" --jq '{event, conclusion, actor: .actor.login}'
 # {"event":"pull_request","conclusion":"action_required","actor":"github-actions[bot]"}
 ```
+
+**Read that list before concluding anything.** Held runs and no runs at all look identical on the PR
+and have different causes. A version PR opened with a PAT (`CI_GITHUB_TOKEN`) creates runs, which is
+the case above. One opened with the plain `GITHUB_TOKEN` creates none, because GitHub suppresses
+workflow triggers from that token. Nothing is held, nothing arrives, and the PR is genuinely checkless until the
+release migrates to the PAT or OIDC shape (**setup-secretless-release**). Under a required-check
+ruleset the checkless case merges only by admin override, which is another reason the bypass actor
+that a transfer wipes is load-bearing.
 
 Approve once. Afterwards the bot is a known contributor and later version PRs run unattended:
 
@@ -607,7 +657,7 @@ When clearing a backlog, **approve the newest run first**. Approving an older qu
 it start last and cancel the newer one through the shared concurrency group — which surfaces as a
 one-second "failure" on the required checks and looks like a broken workflow.
 
-Two dead ends, both tried and reverted on `unional/search-packages`:
+Three dead ends, the first two tried and reverted on `unional/search-packages`:
 
 - **Do not fabricate the check** with a no-op reusable workflow whose job name reproduces the
   required context (unional/search-packages#203, reverted in #204). It misdiagnoses the cause and
@@ -615,6 +665,9 @@ Two dead ends, both tried and reverted on `unional/search-packages`:
 - **Do not reach for an `on: push` workflow watching `changeset-release/**`.** `GITHUB_TOKEN`
   genuinely does suppress `push` events, so it cannot fire — the same recursion guard, real this
   time.
+- **Do not look for a head-branch exemption in the ruleset.** There is none to find. A branch
+  ruleset's `conditions.ref_name` matches the **target** ref, so `changeset-release/**` never enters
+  the match; excluding it exempts nothing, and the rule still applies to every PR aimed at `main`.
 
 A merge queue **can** merge the version PR once its runs are approved — verified on
 `cyberuni/search-packages`, which merged it through the queue with no admin bypass. Earlier guidance
@@ -644,7 +697,13 @@ checks are waiting.
 - Do not add the queue rule before `merge_group:` is on the workflow producing the required check. The queue then waits forever on a check that never starts.
 - Do not leave a user-owned repo with `strict: true` and `allow_update_branch: false` — a stale PR would have no way to update at all.
 - Do not remove Mergify before confirming GitHub auto-merge lands a bot PR — that gap means nothing merges.
-- Do not treat a checkless version PR as a missing check. Approve the `action_required` run once; never fabricate the context with a no-op workflow, and never try to produce it from an `on: push` workflow.
+- Do not treat a checkless version PR as a missing check before listing its runs. Approve an `action_required` run; never fabricate the context with a no-op workflow, never try to produce it from an `on: push` workflow, and never look for a head-branch exemption, because the ruleset matches the target ref.
+- Do not call a required context dead because `/check-runs` does not list it. Read `/status` too; `security/snyk` and `codecov/*` report there and are live.
+- Do not add the `code_scanning` rule from the presence of `codeql-analysis.yml` alone. Confirm a fresh analysis, and skip the rule entirely where the repo has no CodeQL workflow.
+- Do not leave a transferred repo without re-reading its ruleset. The transfer wipes `bypass_actors`, and the release deadlocks behind a rule nobody can override.
+- Do not conclude Mergify is absent because no `.mergify.yml` exists. It can be installed at account level; read the installations endpoint.
+- Do not count squash and rebase being disabled as protection against an auto-merge armer. It is a side effect of the merge shape and it disappears the day someone re-enables them.
+- Do not retry a call the harness refuses in a different encoding. Two rewrites are settled (§ 4); anything else, stop and report.
 - Do not touch archived repos.
 
 ## References

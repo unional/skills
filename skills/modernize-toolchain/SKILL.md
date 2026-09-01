@@ -57,9 +57,12 @@ The `tsc -p` passes it replaces were typechecking as a side effect. Removing the
 `files` may publish an artifact no one documented. On the worked example a webpack UMD bundle was shipping in every release; the handoff notes said to delete it.
 
 ```bash
-npm view <pkg> version
+curl -s -H "Accept: application/vnd.npm.install-v1+json" https://registry.npmjs.org/<pkg> \
+  | jq -r '."dist-tags".latest'
 npm pack <pkg>@latest && tar tzf <pkg>-*.tgz | sort
 ```
+
+Read the registry directly. `npm view` serves a stale cache and kept reporting the previous version for minutes after a publish, which is long enough to draw the wrong conclusion from it.
 
 If a build output is published, either keep emitting it or treat its removal as **breaking**. tsdown emits an IIFE, so usually keep it:
 
@@ -120,7 +123,49 @@ Take the opportunity to *enforce* coverage rather than only report it — set `t
 
 ### pnpm blocks native postinstalls
 
-New tools drag in native binaries (`unrs-resolver` with jest 30, `esbuild`, `@swc/core`). They fail at build time, not install time. Add them to `allowBuilds` in `pnpm-workspace.yaml` — and **remove them again** when the tool that pulled them leaves.
+New tools drag in native binaries (`unrs-resolver` with jest 30, `esbuild`, `@swc/core`). They fail at build time, not install time. Add them to `allowBuilds` in `pnpm-workspace.yaml`, and **remove them again** when the tool that pulled them leaves.
+
+`allowBuilds` is the correct pnpm 11 key. Do not "fix" it to `onlyBuiltDependencies`, which is silently ignored.
+
+It is a **map, not a list**. Written as a YAML sequence, pnpm rewrites the file into a half-broken hybrid: `'0': turbo` sitting beside `turbo: set this to true or false`.
+
+```yaml
+allowBuilds:
+  esbuild: true
+  turbo: false
+```
+
+**`turbo` 1.x must be `false`.** Its postinstall overwrites its own `bin/turbo` JS shim with the raw platform ELF, pnpm links that as a node script, and it dies with `SyntaxError: Invalid or unexpected token` partway into the binary. Omitting `turbo` is not the same as setting it false: omission re-triggers `ERR_PNPM_IGNORED_BUILDS`.
+
+Read the file again after any failed install. pnpm rewrites `pnpm-workspace.yaml` during an `ERR_PNPM_IGNORED_BUILDS` failure and inserts its own placeholder `allowBuilds` block. A hand-edit added on top then fails with a duplicate-key YAML error that reads as if your edit were malformed.
+
+### Internal dependencies must say `workspace:^`
+
+pnpm 10 stopped linking workspace packages by semver range. A sibling declared `"@scope/sibling": "^1.1.2"` now resolves **from the registry**, so the repo builds and tests against a published copy while every command reads as though it were exercising local source. On `create` this held for a whole toolchain pass before anyone noticed.
+
+Nothing fails. That is what makes it expensive: the local test suite is measuring a package you did not change.
+
+```bash
+grep -rn '"@<scope>/' packages/*/package.json | grep -v 'workspace:'
+```
+
+Every hit is a bug. Convert it to `workspace:^` before you believe any monorepo test result.
+
+### Deleting the old lockfile lets years-old ranges float
+
+`yarn.lock` was pinning every `^` range in the repo, some of them for years. Delete it and pnpm re-resolves the lot. Two of the resulting failures were TypeScript **parse** errors, which `skipLibCheck` cannot rescue (`@types/ramda@0.27.66` gives `TS1256`, `search-packages@2.2.1` gives `TS1005`). A third was quieter: a minor bump dropped three exports and the build simply stopped seeing them.
+
+Reconstruct the pins from the lockfile you are deleting into `pnpm-workspace.yaml` `overrides`. Do not narrow the packages' published `dependencies` instead. A release-plumbing PR must not change public metadata, and the override is reversible in a way the manifest is not.
+
+Sequencing has its own trap when the old lockfile is pnpm's. pnpm 10 rejects a pnpm-5.4 lockfile outright and re-resolves everything, which floated `ts-jest` and broke a suite that had nothing to do with the change. Chain the majors instead, one install per step: pnpm 8, then 9, then 10. Each reads the previous format and preserves every resolution, so only the package you meant to move moves.
+
+modernize-repo's phase 4 table names the symptoms these floats produce. This is the cause.
+
+### `auto-install-peers=true` hides packages from `pnpm update`
+
+A package that reaches the tree only as an auto-installed peer is invisible to `pnpm update`, so it and everything under it stay wherever peer resolution first put them. `vite` arrived that way and pinned `postcss` and `nanoid` on vulnerable versions nothing could bump.
+
+Declaring `vite` explicitly is what unblocked the update. When an audit names a version you cannot move, check whether anything in the repo actually declares it before blaming the range.
 
 ### Check the git hooks actually run
 
@@ -130,6 +175,24 @@ Two independent faults are common and silent: the hook still invokes the **old p
 git ls-files -s .husky/commit-msg   # want 100755, not 100644
 echo "bad message" | pnpm exec commitlint   # must fail
 ```
+
+### turbo `inputs` are package-root-relative and not recursive
+
+`inputs: ["*.ts", "package.json", "tsconfig*json"]` matches nothing under `src/`, so the whole source tree sits outside the cache key. turbo was observed replaying a cached build that still carried a type error the source no longer had.
+
+When a build result contradicts the source in front of you, suspect the cache key before the compiler. Name the source directory explicitly (`"src/**"`), then re-verify with `--force`.
+
+### `pnpm version` never runs your script
+
+pnpm intercepts `version` with its own builtin, so a `version` script in `package.json` is skipped entirely and you get npm-style bumping instead. It must be **`pnpm run version`**, everywhere: the workflow, the docs, and any local test of the release path.
+
+### A local `verify` run can mutate the repo
+
+`pnpm link .` inside a `verify` script writes a self-referential runtime dependency: `"<pkg>": "link:"` in `dependencies`, plus a matching `overrides` entry in `pnpm-workspace.yaml`. CI never runs `verify` that way, so nothing catches it there, and it surfaces later as a blocked publish.
+
+Reverting is its own trap. `git checkout -- a b` is atomic: one bad pathspec aborts the whole command and leaves every file modified, with nothing in the output naming which path was wrong. Revert one path per command, then re-read the field you were fixing.
+
+Check `git diff` on `package.json`, `pnpm-workspace.yaml` and the lockfile after any local `verify`.
 
 ## Commit shape
 
@@ -164,7 +227,10 @@ A green CI run is not evidence. Before opening the PR:
 - Do not assume the bundler typechecks.
 - Do not keep wildcard depcheck ignores; they hide dead weight.
 - Do not commit a lockfile built with the `minimumreleaseage` soak bypassed — pnpm rejects it on the next run.
-- Do not trust a cached turbo run as verification.
+- Do not trust a cached turbo run as verification, and do not trust its `inputs` to be recursive.
+- Do not leave an internal dependency on a semver range; under pnpm 10 you are testing the published copy.
+- Do not delete a lockfile without carrying its pins into `overrides` first.
+- Do not read a published version with `npm view`; its cache lags a publish by minutes.
 
 ## References
 

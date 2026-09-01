@@ -39,7 +39,9 @@ Ruleset ids change on transfer, which is why the capture drops them and sorts by
 
 ## What a clean diff looks like
 
-Exactly one difference, in `actions.json`:
+Two differences, both expected.
+
+First, in `actions.json`:
 
 ```diff
 -  "default_workflow_permissions": "write",
@@ -48,7 +50,20 @@ Exactly one difference, in `actions.json`:
 
 That is the org default replacing the repo's value. OIDC needs `write`; restore it before the next release.
 
-`settings.json`, `rulesets.json`, `secrets.json`, and `variables.json` should be byte-identical. Anything else that moved is drift worth naming out loud, not silently re-applying — it means the transfer did more than expected and the rest of the repo deserves a look.
+Second, in `rulesets.json`, once per ruleset that had any bypass actor:
+
+```diff
+-  "bypass_actors": [
+-    { "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always" }
+-  ],
++  "bypass_actors": [],
+```
+
+The rules survive and the bypass list does not. Restore it from the before capture (SKILL.md step 6) before the next release, or the Version PR deadlocks: it carries no checks, `code / all-checks` is required, and with an empty bypass list even an org owner merging by hand gets `Repository rule violations found`.
+
+A repo whose rulesets had **no** bypass actors to begin with shows no ruleset diff at all. That is not evidence the field survives; it is evidence the field was empty. The single-repo proving run read exactly that way, and the batch of five on 2026-08-24 is what corrected it.
+
+`settings.json`, `secrets.json`, and `variables.json` should be byte-identical, and so should every ruleset field except `bypass_actors`. Anything else that moved is drift worth naming out loud, not silently re-applying: it means the transfer did more than expected and the rest of the repo deserves a look.
 
 ## Not captured, and why
 

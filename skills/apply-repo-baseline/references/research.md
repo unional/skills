@@ -15,12 +15,17 @@ Three repos had a default-branch ruleset. They agree on the core and differ at t
 | `required_status_checks` → `code / all-checks` | ✓ strict | ✓ strict | ✓ non-strict |
 | `code_scanning` (CodeQL) | — | ✓ | — |
 
-Baseline takes the newest as canonical (strict + linear history) and makes CodeQL conditional on
-the repo actually running `codeql-analysis.yml`. `integration_id: 15368` is GitHub Actions.
+Baseline took the newest as canonical (strict + linear history). `required_linear_history` was
+dropped on 2026-08-09 when the merge shape settled on merge commits; strict stayed. CodeQL is
+conditional on the repo running `codeql-analysis.yml` **and** having a recent analysis, for the
+reasons under "CodeQL workflow state" below. `integration_id: 15368` is GitHub Actions.
 
-Bypass actors are copied verbatim from search-packages: DeployKey, plus repository roles 2 and 5,
-all `always`. They are reproduced rather than reasoned about — if you want to tighten them, decide
-once and change `assets/branch-ruleset.json`.
+Bypass actors were originally copied verbatim from search-packages: DeployKey, plus repository roles
+2 and 5, all `always`. The 2026-08 sweep settled what they were: role `2` is **triage**, which has no
+push access, so that entry granted nothing; only one repo carried it, the rest carried role `5`
+(admin) alone. Every repo checked had **zero** deploy keys, so the DeployKey actor was a bypass
+waiting for a key that did not exist. `assets/branch-ruleset.json` now ships role `5` and nothing
+else.
 
 ## Drift, measured
 
@@ -37,13 +42,13 @@ once and change `assets/branch-ruleset.json`.
 
 | Setting | Observed | Baseline | Note |
 |---|---|---|---|
-| `allow_merge_commit` | false in search-packages, **true** in the other four | **false** | Required by `required_linear_history`; the `true` repos are the unfixed ones |
+| `allow_merge_commit` | false in search-packages, **true** in the other four | **true** | Reversed 2026-08-09 with the merge shape: one merge commit per PR, `required_linear_history` absent, squash and rebase off |
 | `delete_branch_on_merge` | true everywhere | true | Already consistent |
 | `allow_auto_merge` | true everywhere | true | Already consistent |
-| `squash_merge_commit_title` | `COMMIT_OR_PR_TITLE` (unional, clibuilder) vs `PR_TITLE` (repobuddy, cyberuni) | `COMMIT_OR_PR_TITLE` | Follows the newest |
+| `squash_merge_commit_title` | `COMMIT_OR_PR_TITLE` (unional, clibuilder) vs `PR_TITLE` (repobuddy, cyberuni) | moot | Squash is off in the current shape; the asset sets `merge_commit_title: PR_TITLE` instead |
 | `has_wiki` | false everywhere except `unional/skills` | false | |
 | Actions default token | `write` (search-packages, repobuddy) vs `read` (clibuilder) | **conditional** | `read` only where the release caller declares its own `permissions:`; `write` for `secrets: inherit` callers. See below |
-| `can_approve_pull_request_reviews` | true except repobuddy/repobuddy | **false** | A workflow approving its own PR defeats review |
+| `can_approve_pull_request_reviews` | true except repobuddy/repobuddy | **true** | Revised 2026-08-09. The flag conflates *create* and *approve*, so `false` stops the changesets action opening the Version PR at all; it broke all five batch-1 releases. Both `assets/actions-permissions*.json` ship `true`. `false` only on a repo with no PR-opening workflow |
 | Secret scanning | enabled only on `unional/skills` | enabled (public repos) | Uplift, not current practice |
 
 ## Actions default token — the experiment (2026-08-08)
@@ -156,4 +161,27 @@ the § 6 convergence and the queue want the same end state.
 - **`strict_required_status_checks_policy: true`** stays the default because the alternative needs
   an org. On org-owned repos the answer is the merge queue (which requires `strict: false`); on
   user-owned repos strict stays on and `allow_update_branch: true` is the only affordance.
-- **Bypass actors** — role ids 2 and 5 inherited without verification of which UI roles they map to.
+- **Bypass actors** — settled 2026-08, see "Where the ruleset default came from". Role `2` is triage
+  and grants no bypass; the asset ships `5` alone and no DeployKey.
+
+## Required contexts across the surveyed repos — 2026-08
+
+Repos carried required contexts beyond `code / all-checks`, and a one-endpoint read misclassified
+them. Enumerated from `/check-runs` **and** `/status`:
+
+| Context | Endpoint | State found |
+|---|---|---|
+| `security/snyk` | commit status | live and passing (`jest-progress-tracker`, `jest-audio-reporter`) |
+| `codecov/project`, `codecov/patch` | commit status | live |
+| `CodeQL` (bare) | check-run | reported only as `Analyze (javascript)` under `codeql-action@v1`; v3 reports both names |
+
+None of the three was a dead integration. The baseline drops them from *required* because it
+standardises on one aggregated context, not because they stopped working.
+
+## CodeQL workflow state — 2026-08
+
+`disabled_inactivity` on four repos: `never-fail` (last analysis Oct 2024), `jest-audio-reporter`
+(2024-10-02), `color-map-rainbow` (2023-12-14), `test-progress-tracker` (2022-08-18).
+`jest-progress-tracker` was still on the retired `codeql-action@v1`. Three repos (`async-fp`,
+`create`, `sort-configs`) had no CodeQL workflow at all. A disabled workflow leaves the committed
+file in place, so file presence is not evidence the rule is satisfiable.

@@ -29,14 +29,34 @@ gh run list --repo <o>/<r> --limit 5
 gh secret list --repo <o>/<r>
 ```
 
+#### Diagnose the evidence before you diagnose the repo
+
+Four false conclusions cost real time in the sweep, and each came from trusting a signal that meant something narrower than it looked.
+
+| Signal | What it actually proves | Read it correctly |
+|---|---|---|
+| A red workflow run | the state of that workflow **at that run's SHA**, and nothing about the file today | check when the file last changed before concluding anything about it. Five agents independently called a shared workflow broken from runs that predated its fix |
+| A commit's date | the *author* date is not the *commit* date | a rebased fix looked 17 days older than it was and produced a wrong conclusion. Read `%cI`, not `%aI` |
+| `gh pr list` | the state of open branches, several of which are stale Renovate majors | diagnose from the default branch's own runs. A whole pre-written CI table was wrong on all five repos it covered |
+| A workflow that exists | nothing about whether it ever ran | check the trigger branch against the actual default branch. One repo's `nodejs.yml` triggered on `push: master` while the default branch was `main`, so its release job **had never executed once**. Inert from the start, not broken |
+| `ELIFECYCLE` | a script exited non-zero | pnpm's generic wrapper. It is not a diagnosis; read the script's own output |
+| `gh pr checks` saying `pending` | little; it reports `pending` for checks that have completed | cross-check `gh api repos/<o>/<r>/commits/<sha>/check-runs` |
+
+One more, because it wastes a whole cycle: **`gh run rerun` replays a reusable workflow at the SHA the original run resolved.** It will not pick up a fix landed upstream since. Push a fresh `synchronize` event instead.
+
 Record the failing job's **name and duration** before reading any log — they identify the class faster. Then decide whether the repo is worth the work at all:
 
 ```bash
 gh api repos/<o>/<r>/contents/package.json --jq .content | base64 -d | jq '{name, private, workspaces}'
-npm view <pkg> version
+curl -s -H "Accept: application/vnd.npm.install-v1+json" https://registry.npmjs.org/<pkg> \
+  | jq -r '."dist-tags".latest'
 ```
 
+Read the registry directly rather than through `npm view`, here and everywhere else in this pass. `npm view` serves a cache that stayed stale for minutes after a publish during the sweep, which is long enough to conclude a release failed when it succeeded.
+
 A private root whose workspace packages are all `private: true` publishes nothing; a red release there may not be worth fixing. Say so and stop rather than repairing a pipeline with no output.
+
+**But "publishes nothing" is not "does not matter."** The sweep found one repo in exactly that shape whose changesets setup failed green, versioning nothing while exiting 0 (see **setup-changesets**, Private packages), and a *template* repo in that shape propagating nine broken patterns into every repo scaffolded from it. Weigh what the repo feeds, not just what it ships.
 
 ### 2. Decide the repo's home
 
@@ -71,7 +91,11 @@ For a repo bound for `cyberuni` this is a precondition rather than a preference:
 
 pnpm's strict, non-hoisted `node_modules` stops masking whatever the repo was resolving by accident.
 Everything below is a **pre-existing bug surfacing**, not a regression you introduced — say so in the
-PR, or the diff reads as gratuitous churn:
+PR, or the diff reads as gratuitous churn.
+
+Expect an undeclared dependency. **Three of the sweep's four yarn conversions had one** that had only
+ever resolved through hoisting, which makes it the most reliable finding of the conversion. Hunt for
+it rather than waiting for it to surface:
 
 | symptom | cause | fix |
 |---|---|---|
@@ -109,8 +133,15 @@ staying. Combine it with the phase above where both apply — the release workfl
 Do not proceed until a release has actually published — a green run is not proof:
 
 ```bash
-npm view <pkg> version
+curl -s -H "Accept: application/vnd.npm.install-v1+json" https://registry.npmjs.org/<pkg> \
+  | jq -r '."dist-tags".latest'
 ```
+
+Audit the published tarball before migrating, not after. It takes two seconds per package and catches
+defects PR CI structurally cannot see, and because the publish gate is a `needs:` of release, an
+unfixed one blocks the release with everything else green. **setup-secretless-release** carries the
+commands and the defect catalogue; the sweep found five packages declaring a licence they do not ship
+and three shipping their own tests.
 
 ### 6. Legacy CI layout, if present
 
@@ -143,8 +174,8 @@ Claiming done without evidence is the failure mode this whole pass exists to rem
 
 On **changesets** — the destination for every repo here — the *changeset file* decides, and the PR
 title publishes nothing. So the failure mode is omission: a PR that changes the published package
-with no changeset produces a green release run that **publishes nothing**, and `npm view <pkg>
-version` never moves. That is the quiet way a "finished" repo fails its own proof below.
+with no changeset produces a green release run that **publishes nothing**, and `dist-tags.latest`
+never moves. That is the quiet way a "finished" repo fails its own proof below.
 
 On a repo **not yet migrated**, commit messages decide. Under the merge-commit baseline that is
 worse than it used to be: every branch commit reaches `main` and gets analyzed, so a stray `feat:`
@@ -162,11 +193,14 @@ Two toolchain PRs on `color-map` were titled `feat:` and each cut a minor while 
 semver contract broke — a minor is a safe superset of a patch — but the changelog now advertises
 features that do not exist.
 
+The proof table is the one place `npm view` does the most damage, because a stale read there is
+indistinguishable from a release that did not happen. Read the registry:
+
 | Claim | Proof |
 |---|---|
-| Publishes | `npm view <pkg> version` shows the new version |
+| Publishes | `curl -s -H "Accept: application/vnd.npm.install-v1+json" https://registry.npmjs.org/<pkg> \| jq -r '."dist-tags".latest'` shows the new version |
 | Secretless | `gh secret list` shows no `NPM_TOKEN` / `CI_GITHUB_TOKEN`, and a release has published since |
-| Provenance | `npm view <pkg>@<v> dist.attestations` |
+| Provenance | the same registry document carries `.versions[<v>].dist.attestations`; the key is absent on a package published without it |
 | Installable | install the published tarball and exercise the public API |
 | Queue serializes | two trivial PRs; the second's `gh-readonly-queue/main/pr-<N>-<sha>` base is the first's merge commit |
 
@@ -177,7 +211,8 @@ Delete any temporary validation artifacts in the same pass.
 - Do not apply settings before diagnosing; you will fix the wrong class and mask the real one.
 - Do not transfer a repo after registering trusted publishing — the config pins `owner/repo`.
 - Do not fabricate a required status check to get a checkless PR through.
-- Do not treat a green release run as proof of publication.
+- Do not treat a green release run as proof of publication, and do not prove publication with `npm view`; its cache lags the registry.
+- Do not read a workflow run as the current state of the workflow file. Check when the file last changed first.
 - Do not repair pipelines for repos that publish nothing without saying so first.
 - Do not run this across many repos at once; sweep first, then per repo.
 - Do not leave a repo on yarn or semantic-release because it currently works. Both are legacy states; migrate, or name the blocker that stopped you.

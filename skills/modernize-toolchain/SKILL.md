@@ -123,11 +123,22 @@ Take the opportunity to *enforce* coverage rather than only report it — set `t
 
 ### pnpm blocks native postinstalls
 
-New tools drag in native binaries (`unrs-resolver` with jest 30, `esbuild`, `@swc/core`). They fail at build time, not install time. Add them to `allowBuilds` in `pnpm-workspace.yaml`, and **remove them again** when the tool that pulled them leaves.
+New tools drag in native binaries (`unrs-resolver` with jest 30, `esbuild`, `@swc/core`). They fail at build time, not install time. Allow their build scripts explicitly, and **remove the entry again** when the tool that pulled it leaves.
 
-`allowBuilds` is the correct pnpm 11 key. Do not "fix" it to `onlyBuiltDependencies`, which is silently ignored.
+**The key, the shape and the file all changed between pnpm 10 and pnpm 11.** Read `packageManager` before you write either form.
 
-It is a **map, not a list**. Written as a YAML sequence, pnpm rewrites the file into a half-broken hybrid: `'0': turbo` sitting beside `turbo: set this to true or false`.
+| pnpm | key | shape | file |
+|---|---|---|---|
+| 10.x | `pnpm.onlyBuiltDependencies` | array | `package.json` |
+| 11.x | `allowBuilds` | map | `pnpm-workspace.yaml` |
+
+On 10.x (`cyberuni/resolve.imports`, `pnpm@10.34.5`):
+
+```jsonc
+"pnpm": { "onlyBuiltDependencies": ["esbuild", "turbo"] }
+```
+
+On 11.x (`unional/never-fail`, `unional/color-map-rainbow`):
 
 ```yaml
 allowBuilds:
@@ -135,7 +146,11 @@ allowBuilds:
   turbo: false
 ```
 
-**`turbo` 1.x must be `false`.** Its postinstall overwrites its own `bin/turbo` JS shim with the raw platform ELF, pnpm links that as a node script, and it dies with `SyntaxError: Invalid or unexpected token` partway into the binary. Omitting `turbo` is not the same as setting it false: omission re-triggers `ERR_PNPM_IGNORED_BUILDS`.
+Under pnpm 11, `onlyBuiltDependencies` is **silently ignored**. Under pnpm 10 it is the only key there is, so do not "correct" a 10.x repo onto `allowBuilds`. Whenever you write this down, name the version alongside the key.
+
+The 11 map is not a list. Written as a YAML sequence, pnpm rewrites the file into a half-broken hybrid: `'0': turbo` sitting beside `turbo: set this to true or false`.
+
+**On pnpm 11, `turbo` 1.x must be `false`.** Its postinstall overwrites its own `bin/turbo` JS shim with the raw platform ELF, pnpm links that as a node script, and it dies with `SyntaxError: Invalid or unexpected token` partway into the binary. Omitting `turbo` is not the same as setting it false: omission re-triggers `ERR_PNPM_IGNORED_BUILDS`. turbo 2.x does not have the problem (`unional/type-plus` runs 2.9.14 clean), and the array form has no observed equivalent of an explicit `false`.
 
 Read the file again after any failed install. pnpm rewrites `pnpm-workspace.yaml` during an `ERR_PNPM_IGNORED_BUILDS` failure and inserts its own placeholder `allowBuilds` block. A hand-edit added on top then fails with a duplicate-key YAML error that reads as if your edit were malformed.
 

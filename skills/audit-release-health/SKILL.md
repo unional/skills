@@ -115,6 +115,26 @@ A repo pushed within the year whose package was last published years ago is publ
 
 This is a **suspicion signal, not a verdict**: `pushedAt` moves on any branch push, and a repo can legitimately have had no releasable change. Flag these for a look; do not classify them from this alone.
 
+### 6. Third net — a release PR that can never merge
+
+A changesets repo stops publishing while looking completely healthy if its `Version Packages` PR is stuck. The release workflow never runs because the PR never merges, so **step 3 sees nothing at all** — no failing run to classify.
+
+```bash
+gh pr list --repo <o>/<r> --state open --head changeset-release/main \
+  --json number,createdAt,mergeStateStatus
+```
+
+An open release PR older than a day or two is a stuck release. The usual cause is that the bot's workflow runs are parked awaiting approval, so a required context never appears:
+
+```bash
+gh api "repos/<o>/<r>/actions/runs?status=action_required&per_page=5" \
+  --jq '.workflow_runs[] | "\(.name) \(.head_branch) \(.created_at)"'
+```
+
+`BLOCKED` with an **empty check list** is the signature — nothing red, because nothing ran. One repo found this way had been stuck 27 days.
+
+Report it; **ship-it** is the fix. This audit still changes nothing.
+
 ## Report
 
 Group by root cause, not by repo — the grouping is what makes the work batchable, since one fix usually clears several repos at once. Per repo give: name, class, last release attempt date, the one-line evidence, and the fix owner (**modernize-repo** for most; the catalogue entry names the rest).
@@ -141,3 +161,4 @@ Say what you actually checked and what you could not. A sweep that implies full 
 - **setup-secretless-release** — `references/failure-catalogue.md` carries every signature step 3 routes to, plus the fix for each
 - **modernize-repo** — the per-repo repair pass this audit feeds
 - **apply-repo-baseline** — for repos whose finding is settings drift rather than a broken release
+- **ship-it** — for repos whose finding is a stuck `Version Packages` PR

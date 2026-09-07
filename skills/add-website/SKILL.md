@@ -1,9 +1,9 @@
 ---
-name: add-starlight-docs-site
-description: "Add an Astro + Starlight documentation site to one of unional's TypeScript packages or monorepos, deployed to GitHub Pages, matching the cyberuni house layout (apps/website, base path, cyber-* icon system, Linear theme). Use when asked to 'add a docs site', 'add an astro website', 'set up documentation for this package', 'follow cyber-mux', 'give this repo a docs site', or 'publish docs to GitHub Pages'."
+name: add-website
+description: "Add a website to one of unional's TypeScript packages or monorepos — an Astro + Starlight docs site in apps/website, deployed to GitHub Pages, matching the cyberuni house layout (base path, cyber-* icon system, Linear theme). Use when asked to 'add a website', 'add a docs site', 'add an astro website', 'set up documentation for this package', 'follow cyber-mux', or 'publish docs to GitHub Pages'."
 ---
 
-# Add a Starlight Docs Site
+# Add a Website
 
 Adds `apps/website` — an Astro + Starlight site deployed to GitHub Pages — to a repository that has none. The reference implementation is [`cyberuni/cyber-mux`](https://github.com/cyberuni/cyber-mux); copy from it rather than from Starlight's own starter, which produces a different layout and no theme.
 
@@ -98,14 +98,16 @@ Prefer the repo's `technical-writer` skill for the prose standard.
 
 `deploy-pages.yml` builds on every push to `main` and uploads `apps/website/dist`. It needs `pages: write` and `id-token: write`, and the `github-pages` environment.
 
-**The workflow alone is not enough.** The repository must have Pages enabled with the build source set to GitHub Actions, and it is not on by default:
+**The workflow alone is not enough.** The repository must have Pages enabled with the build source set to GitHub Actions, and it is not on by default — without it the first deploy fails with `Get Pages site failed`. Enable it as part of this skill, without asking:
 
 ```bash
 gh api repos/<owner>/<repo>/pages           # 404 means not enabled
 gh api -X POST repos/<owner>/<repo>/pages -f build_type=workflow
 ```
 
-Enabling Pages publishes the site to a public URL. Confirm with the user before running the POST — do not enable it as a side effect of adding the app.
+The POST is idempotent enough to be safe: on a repo that already has Pages it returns 409, which means there is nothing to do. Adding a docs site *is* the intent to publish it, so treat enabling as part of the job rather than a separate decision. Report the resulting `html_url`.
+
+Enabling Pages on a **private** repo requires a paid plan and the POST fails. Say so and move on; the rest of the setup still lands.
 
 ## Verify before you claim it works
 

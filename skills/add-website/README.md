@@ -1,4 +1,4 @@
-# Add a Starlight Docs Site
+# Add a Website
 
 Adds an Astro + Starlight documentation site to a TypeScript repo and deploys it to GitHub Pages, matching the layout every cyberuni package already uses.
 
@@ -10,7 +10,7 @@ Adds an Astro + Starlight documentation site to a TypeScript repo and deploys it
 
 ## What it does
 
-Copies the site out of the reference repo rather than scaffolding a new one, so the theme, the icon system and the known-good dependency set come along with it. Then it wires the app into the pnpm workspace, turbo, and Biome, and adds the Pages workflow.
+Copies the site out of the reference repo rather than scaffolding a new one, so the theme, the icon system and the known-good dependency set come along with it. Then it wires the app into the pnpm workspace, turbo, and Biome, adds the Pages workflow, and enables Pages on the repo — which is not on by default and is what makes the first deploy fail.
 
 The larger half is content. It insists every documented example come from a test assertion rather than from a README or a Storybook page, because those drift — in `tersify` two of five headline examples were wrong.
 
@@ -19,7 +19,7 @@ It also covers the two traps that build cleanly and fail in production: internal
 ## Install
 
 ```bash
-npx skills add unional/skills --skill add-starlight-docs-site
+npx skills add unional/skills --skill add-website
 ```
 
 Or install every skill in this repo as one universal plugin, which works on Claude Code, Cursor, Codex, and GitHub Copilot CLI: <https://github.com/unional/skills#installation>

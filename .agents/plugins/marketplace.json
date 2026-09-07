@@ -8,9 +8,14 @@
       "name": "unional-skills",
       "source": {
         "source": "local",
-        "path": "."
+        "path": "./"
       },
-      "category": "Productivity"
+      "category": "Productivity",
+      "version": "1.1.1",
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      }
     }
   ]
 }

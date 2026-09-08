@@ -34,6 +34,14 @@ Vendor targets are the keys of `vendorExtensions` in `.plugin/plugin.json` — a
 
 This repo is pure markdown apart from manifest generation. There are no lint or test commands; the only build step is `npx universal-plugin plugin build`, which regenerates the four vendor manifests from `.plugin/plugin.json`.
 
+The one dependency is `@changesets/cli`, installed with pnpm for the release workflow.
+
+## Releases
+
+Releases run on changesets. `package.json` is `private: true` and nothing publishes to npm — `privatePackages: { version: true, tag: true }` in `.changeset/config.json` makes a release a version bump plus a git tag, which is what the plugin's consumers install from.
+
+Every user-facing skill change needs a changeset (`pnpm cs`). On push to `main`, `.github/workflows/release.yml` opens a **Version Packages** PR; merging it bumps `package.json`, writes `CHANGELOG.md`, and tags. Versions and `CHANGELOG.md` on that PR are generated — never hand-edit them.
+
 ## Adding a New Skill
 
 Create `skills/<skill-name>/SKILL.md` with this structure:
@@ -58,6 +66,6 @@ The `description` frontmatter field is used by agents to decide when to invoke t
 
 ## CI
 
-Dependabot is configured in `.github/dependabot.yml` for `github-actions` only — `package.json` declares no dependencies. Its PRs are auto-approved via `.github/workflows/automerge-dependabot.yml`, which auto-merges patch and minor updates (rebase strategy) and leaves majors for a human.
+Dependabot is configured in `.github/dependabot.yml` for `github-actions` only; the `npm` ecosystem is not enabled yet, so `@changesets/cli` is not updated automatically. Its PRs are auto-approved via `.github/workflows/automerge-dependabot.yml`, which auto-merges patch and minor updates (rebase strategy) and leaves majors for a human.
 
-Renovate is deliberately not enabled; its onboarding PR (#1) was closed. With no dependency manifest, the only thing it had to update was the Dependabot machinery itself.
+Renovate is deliberately not enabled; its onboarding PR (#1) was closed.

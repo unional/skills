@@ -15,19 +15,28 @@
 		"planning",
 		"verification",
 		"task-management",
-		"changesets"
+		"changesets",
+		"productivity"
 	],
 	"extensions": {
 		"org.cyberuni.universal-plugin": {
+			"vendors": [
+				"claude-code",
+				"cursor",
+				"codex",
+				"copilot-cli"
+			],
 			"skills": "./skills/",
-			"packagePath": ".",
-			"vendors": ["claude-code", "cursor", "codex", "copilot-cli"],
 			"harnesses": {
 				"claude-code": {},
 				"cursor": {
 					"publisher": "unional",
 					"category": "productivity",
-					"tags": ["workflow", "planning", "verification"]
+					"tags": [
+						"workflow",
+						"planning",
+						"verification"
+					]
 				},
 				"codex": {
 					"interface": {

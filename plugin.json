@@ -1,4 +1,5 @@
 {
+	"$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
 	"name": "unional-skills",
 	"version": "1.1.1",
 	"description": "Workflow orchestration, verification, and contribution skills for AI coding agents — plan-first execution, evidence-backed completion, autonomous bug fixing, subagent strategy, and changeset management.",
@@ -16,11 +17,25 @@
 		"task-management",
 		"changesets"
 	],
-	"skills": "./skills/",
-	"category": "productivity",
-	"tags": [
-		"workflow",
-		"planning",
-		"verification"
-	]
+	"extensions": {
+		"org.cyberuni.universal-plugin": {
+			"skills": "./skills/",
+			"packagePath": ".",
+			"vendors": ["claude-code", "cursor", "codex", "copilot-cli"],
+			"harnesses": {
+				"claude-code": {},
+				"cursor": {
+					"publisher": "unional",
+					"category": "productivity",
+					"tags": ["workflow", "planning", "verification"]
+				},
+				"codex": {
+					"interface": {
+						"displayName": "unional skills",
+						"category": "productivity"
+					}
+				}
+			}
+		}
+	}
 }

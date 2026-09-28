@@ -36,6 +36,7 @@ Each skill has its own README with the full description and install command.
 | **[transfer-repo-to-org](skills/transfer-repo-to-org)** | Move a repo from a personal namespace into an org without breaking its next release. Re-registers the npm trusted publisher that pins `owner/repo`, fixes metadata, unlocks the merge queue. |
 | **[modernize-toolchain](skills/modernize-toolchain)** | Replace a TypeScript library's build, lint, test and dependency stack in one pass: tsdown, biome, turbo, vitest. Deletes before it upgrades. |
 | **[add-website](skills/add-website)** | Add an Astro + Starlight docs site to a repo, deploy it to GitHub Pages and enable Pages there, matching the cyberuni house layout. Insists every documented example come from a test assertion. |
+| **[sweep-dependency](skills/sweep-dependency)** | Move one package to a new version across every repo I own, leaf-first: dispatch pods, gate and merge each PR, release it, and verify the publish on npm before moving up. |
 | **[technical-writer](skills/technical-writer)** | One documentation standard: controlled plain prose, one home per fact, every external claim backed by a source. Also audits an existing corpus. |
 
 ## Installation

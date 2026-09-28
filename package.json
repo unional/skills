@@ -1,6 +1,7 @@
 {
   "name": "unional-skills",
-  "version": "1.0.0",
+  "version": "1.1.1",
+  "private": true,
   "description": "Workflow orchestration, verification, and contribution skills for AI coding agents",
   "repository": {
     "type": "git",
@@ -19,12 +20,14 @@
     "task-management"
   ],
   "license": "MIT",
-  "files": [
-    ".plugin/",
-    ".claude-plugin/",
-    ".cursor-plugin/",
-    ".codex-plugin/",
-    "plugin.json",
-    "skills/"
-  ]
+  "scripts": {
+    "cs": "changeset",
+    "version": "changeset version && universal-plugin publish sync-version && universal-plugin plugin build",
+    "release": "changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^3.0.2",
+    "universal-plugin": "^0.7.0"
+  },
+  "packageManager": "pnpm@11.25.0"
 }

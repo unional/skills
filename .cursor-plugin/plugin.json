@@ -14,7 +14,8 @@
 		"planning",
 		"verification",
 		"task-management",
-		"changesets"
+		"changesets",
+		"productivity"
 	],
 	"skills": "./skills/",
 	"publisher": "unional",

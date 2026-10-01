@@ -24,9 +24,14 @@ phase_apt() {
   sudo apt-get update 2>&1 | grep -E '^(E|W):' || true
   local want=() skip=()
   while read -r p; do
-    if apt-cache show "$p" >/dev/null 2>&1; then want+=("$p"); else skip+=("$p"); fi
+    if [[ $(apt-cache policy "$p" 2>/dev/null) =~ Candidate:\ [^\(] ]]; then want+=("$p"); else skip+=("$p"); fi
   done < "$m/apt/packages.txt"
+  # Distros share one network stack, so a package starting its daemon (sshd on :22) collides
+  # with the source distro's; policy-rc.d defers every start to the next boot.
+  printf '#!/bin/sh\nexit 101\n' | sudo tee /usr/sbin/policy-rc.d >/dev/null && sudo chmod +x /usr/sbin/policy-rc.d
+  sudo DEBIAN_FRONTEND=noninteractive dpkg --configure -a
   sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "${want[@]}" || failed+=(apt)
+  sudo rm -f /usr/sbin/policy-rc.d
   [ ${#skip[@]} -gt 0 ] && echo "not available on $target (renamed or dropped): ${skip[*]}"
 }
 

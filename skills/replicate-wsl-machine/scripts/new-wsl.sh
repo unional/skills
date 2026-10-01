@@ -7,9 +7,8 @@ set -euo pipefail
 name=${1:?usage: new-wsl.sh <name> <user> [image]}; user=${2:?}; image=${3:-Ubuntu-26.04}
 wsl=wsl.exe
 listed() { $wsl -l -q | iconv -f utf-16le -t utf-8 | tr -d '\r' | grep -qx "$1"; }
-listed "$name" && { echo "distro $name already exists; unregister it first or pick another name" >&2; exit 1; }
-
-$wsl --install "$image" --name "$name" --no-launch
+# wsl.exe --install hangs without a terminal, so install interactively when it does.
+if listed "$name"; then echo "distro $name exists; configuring it"; else $wsl --install "$image" --name "$name" --no-launch; fi
 as_root() { $wsl -d "$name" -u root --cd / -- bash -c "$1"; }
 as_root "id $user >/dev/null 2>&1 || useradd -m -s /bin/bash -G sudo,adm $user"
 as_root "printf '[boot]\nsystemd=true\n\n[user]\ndefault=$user\n' > /etc/wsl.conf"

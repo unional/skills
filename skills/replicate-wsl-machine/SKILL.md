@@ -21,6 +21,7 @@ scripts/capture.sh "$(chezmoi source-path)/machines/<name>" ~/code [more repo ro
 
 Then review before committing:
 
+- An installer that prompts (a license, a menu) reads `/dev/tty` and hangs unattended. Record it as `manual <binary> '<command>'`. Never answer a license prompt for the user.
 - `local-bin.txt` lists everything in `~/.local/bin` and `~/.cargo/bin`. Each tool not covered by apt, brew, mise, cargo, or uv needs an `inst <binary> '<command>'` line in `installers.sh`. Find the command in `~/.zsh_history` (`grep -aE 'curl[^|]*\| *(ba)?sh'`) or the tool's docs. Never guess an installer URL. Leave it as `todo <binary>` and tell the user.
 - Before capturing, check `chezmoi status`. Unpushed dotfile drift won't reach the target; offer to `chezmoi re-add` it and show the diff first.
 - `user-services/*.service` have `$HOME` rewritten to `%h`. Any other absolute path in them (a version-manager shim, a `/run/user/...` path) breaks on the target. Point it at a stable path, or tell the user.
@@ -41,7 +42,7 @@ The user sets the password; you cannot, because it needs a terminal: `wsl.exe -d
 
 ## 3. Apply (on the target)
 
-Drive it from the source machine through `wsl.exe`. First copy the manifest and the scripts in, because the target has neither until its dotfiles land:
+Drive it from the source machine through `wsl.exe`, passing commands on stdin (`wsl.exe -d <name> --cd '~' -- bash -s <<'EOF'`). `wsl.exe` strips the quotes from arguments passed on its command line. First copy the manifest and the scripts in, because the target has neither until its dotfiles land:
 
 ```bash
 tar c -C <manifest> . | wsl.exe -d <name> --cd '~' -- bash -c 'mkdir -p ~/.bootstrap/manifest && tar x -C ~/.bootstrap/manifest'
@@ -53,12 +54,12 @@ On another PC with no source distro, clone the skills and dotfiles repos in the 
 
 Then, in order:
 
-1. `gh auth login` in the target. It is interactive, so ask the user to run `wsl.exe -d <name>` and do it there.
+1. `eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"`, then `gh auth login` in the target. Brew is not on PATH until the dotfiles land. It is interactive, so ask the user to run `wsl.exe -d <name>` and do it there.
 2. The `setup-dotfiles` skill: `chezmoi init --apply unional/dotfiles`. It prompts for tokens, so the user runs it.
 3. `apply.sh .bootstrap/manifest mise cargo uv installers services repos finish`
 4. `wsl.exe --terminate <name>`, so the new login shell and systemd units take effect.
 
-Every phase is idempotent. After a failure, rerun only the failed phases. `finish` removes the temporary passwordless sudo that `new-wsl.sh` granted. Run it last, even after failures.
+To skip a phase, such as cloning repos, leave it out of the phase list. Every phase is idempotent. After a failure, rerun only the failed phases. `finish` removes the temporary passwordless sudo that `new-wsl.sh` granted. Run it last, even after failures.
 
 Not carried over (the user decides each one):
 

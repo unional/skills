@@ -69,6 +69,7 @@ phase_uv() {
 phase_installers() {
   inst() { command -v "$1" >/dev/null && { echo "have $1"; return; }; echo "installing $1"; bash -c "$2" </dev/null || failed+=("inst:$1"); }
   todo() { echo "TODO no installer recorded: $1"; }
+  manual() { command -v "$1" >/dev/null && { echo "have $1"; return; }; echo "RUN YOURSELF (interactive): $2"; }
   . "$m/installers.sh"
 }
 

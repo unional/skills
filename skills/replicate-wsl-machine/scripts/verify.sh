@@ -21,6 +21,7 @@ section "cargo"
 section "installers"
 inst() { command -v "$1" >/dev/null || gap "$1"; }
 todo() { gap "$1 (no installer recorded)"; }
+manual() { command -v "$1" >/dev/null || gap "$1 (interactive installer: $2)"; }
 . "$m/installers.sh"
 section "user services (copied / enabled)"
 while read -r u; do
@@ -28,7 +29,7 @@ while read -r u; do
   systemctl --user is-enabled -q "$u" 2>/dev/null || gap "$u not enabled"
 done < "$m/user-services/enabled.txt"
 section "repos"
-gap $(while IFS=$'\t' read -r path _; do [ -d "$HOME/$path/.git" ] || echo "$path"; done < "$m/repos.tsv")
+[ -f "$m/repos.tsv" ] && gap $(while IFS=$'\t' read -r path _; do [ -d "$HOME/$path/.git" ] || echo "$path"; done < "$m/repos.tsv")
 section "system"
 [ "$(basename "$(getent passwd "$USER" | cut -d: -f7)")" = "$(cat "$m/system/shell")" ] || gap "login shell is not $(cat "$m/system/shell")"
 [ -f /etc/sudoers.d/90-bootstrap ] && gap "temporary passwordless sudo still present"

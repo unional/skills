@@ -15,7 +15,7 @@
         "verification"
       ],
       "source": "./",
-      "version": "1.1.1",
+      "version": "1.2.0",
       "homepage": "https://github.com/unional/skills",
       "repository": "https://github.com/unional/skills",
       "license": "MIT",

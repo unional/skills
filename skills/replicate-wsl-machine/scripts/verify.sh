@@ -30,6 +30,8 @@ while read -r u; do
 done < "$m/user-services/enabled.txt"
 section "repos"
 [ -f "$m/repos.tsv" ] && gap $(while IFS=$'\t' read -r path _; do [ -d "$HOME/$path/.git" ] || echo "$path"; done < "$m/repos.tsv")
+section "signing"
+[ -f ~/.ssh/id_ed25519_signing ] || gap "signing key ~/.ssh/id_ed25519_signing not copied"
 section "system"
 [ "$(basename "$(getent passwd "$USER" | cut -d: -f7)")" = "$(cat "$m/system/shell")" ] || gap "login shell is not $(cat "$m/system/shell")"
 [ -f /etc/sudoers.d/90-bootstrap ] && gap "temporary passwordless sudo still present"

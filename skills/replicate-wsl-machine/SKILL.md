@@ -56,18 +56,31 @@ Then, in order:
 
 1. `eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"`, then `gh auth login` in the target. Brew is not on PATH until the dotfiles land. It is interactive, so ask the user to run `wsl.exe -d <name>` and do it there.
 2. The `setup-dotfiles` skill: `chezmoi init --apply unional/dotfiles`. It prompts for tokens, so the user runs it.
-3. `apply.sh .bootstrap/manifest mise cargo uv installers services repos finish`
-4. `wsl.exe --terminate <name>`, so the new login shell and systemd units take effect.
+3. Commit signing, below. The gitconfig sets `commit.gpgsign = true`, so every commit fails until it is done.
+4. `apply.sh .bootstrap/manifest mise cargo uv installers services repos finish`
+5. `wsl.exe --terminate <name>`, so the new login shell and systemd units take effect.
 
 To skip a phase, such as cloning repos, leave it out of the phase list. Every phase is idempotent. After a failure, rerun only the failed phases. `finish` removes the temporary passwordless sudo that `new-wsl.sh` granted. Run it last, even after failures.
 
 Not carried over (the user decides each one):
 
-- SSH keys, including the commit-signing key the gitconfig references
+- SSH keys, apart from the commit-signing key below
 - cloud credentials (`~/.aws`, `~/.azure`, `~/.config/gcloud`) and `~/.secrets`
 - agent logins
 - ollama models: `ollama pull <model>`
 - Docker: turn on the distro under Docker Desktop → Resources → WSL integration
+
+### Commit signing
+
+The gitconfig signs every commit, the user's and Claude Code's alike, with `~/.ssh/id_ed25519_signing`. Carry that key over; never generate a new one, because GitHub and `allowed_signers` already list it. It is a private key, so the user copies it. Never read or copy it yourself. Give them this, run in the target:
+
+```bash
+install -d -m 700 ~/.ssh
+(umask 077; wsl.exe -d <source> --cd '~' -- cat .ssh/id_ed25519_signing > ~/.ssh/id_ed25519_signing)
+wsl.exe -d <source> --cd '~' -- cat .ssh/id_ed25519_signing.pub > ~/.ssh/id_ed25519_signing.pub
+```
+
+Copied any other way, such as through Windows Explorer, the key lands world-readable and `ssh-keygen` refuses it as `UNPROTECTED PRIVATE KEY FILE`: `chmod 600 ~/.ssh/id_ed25519_signing`. Explorer also leaves `*:Zone.Identifier` files beside it, which are safe to delete.
 
 ## 4. Verify
 
@@ -80,4 +93,5 @@ It lists every gap by section and exits 1 if any exist. Report each gap as one o
 - a package renamed on the new Ubuntu release (the apt phase prints these)
 - a `todo` installer
 - a user service not yet enabled (enable it only after its program is configured)
+- the signing key not yet copied (see Commit signing)
 - a real failure

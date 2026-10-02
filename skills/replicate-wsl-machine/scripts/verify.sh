@@ -30,6 +30,13 @@ while read -r u; do
 done < "$m/user-services/enabled.txt"
 section "repos"
 [ -f "$m/repos.tsv" ] && gap $(while IFS=$'\t' read -r path _; do [ -d "$HOME/$path/.git" ] || echo "$path"; done < "$m/repos.tsv")
+section "signing"
+[ -f ~/.ssh/id_ed25519_signing.pub ] || gap "personal signing key ~/.ssh/id_ed25519_signing not copied"
+if [ -f ~/.ssh/id_ed25519_signing_agent.pub ]; then
+  grep -qF "$(cut -d' ' -f2 ~/.ssh/id_ed25519_signing_agent.pub)" ~/.config/git/allowed_signers 2>/dev/null || gap "agent signing key not in ~/.config/git/allowed_signers"
+else
+  gap "agent signing key ~/.ssh/id_ed25519_signing_agent not generated"
+fi
 section "system"
 [ "$(basename "$(getent passwd "$USER" | cut -d: -f7)")" = "$(cat "$m/system/shell")" ] || gap "login shell is not $(cat "$m/system/shell")"
 [ -f /etc/sudoers.d/90-bootstrap ] && gap "temporary passwordless sudo still present"

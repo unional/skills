@@ -99,7 +99,7 @@ ssh-keygen -t ed25519 -N "" -C "claude-agent commit signing (<name>)" -f ~/.ssh/
 Then:
 
 1. Add its public key to `dot_config/git/allowed_signers` in the dotfiles source with a `claude-agent` comment, and `chezmoi apply ~/.config/git/allowed_signers`.
-2. Register it on GitHub as a signing key: `gh ssh-key add ~/.ssh/id_ed25519_signing_agent.pub --type signing --title "claude-agent (<name>)"`. That needs the `admin:ssh_signing_key` scope. If `gh` lacks it, the user runs `gh auth refresh -h github.com -s admin:ssh_signing_key`, which opens a browser.
+2. Register it on GitHub as a signing key: `gh ssh-key add <pub-file> --type signing --title "claude-agent (<name>)"`. Claude's permissions deny reads under `~/.ssh`, so write `<pub-file>` to scratch from the `claude-agent` line in `allowed_signers` (`grep 'claude-agent$' ~/.config/git/allowed_signers | awk '{print $2" "$3}'`). That needs the `admin:ssh_signing_key` scope. If `gh` lacks it, the user runs `gh auth refresh -h github.com -s admin:ssh_signing_key`, which opens a browser.
 3. When retiring the source machine, delete its agent key from GitHub (`gh ssh-key list`, `gh ssh-key delete <id>`) and from `allowed_signers`.
 
 Until a new Claude Code session starts, the running one lacks the env. Sign its commits by prefixing `SSH_AUTH_SOCK="" GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=user.signingkey GIT_CONFIG_VALUE_0=$HOME/.ssh/id_ed25519_signing_agent.pub`.

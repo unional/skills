@@ -5,7 +5,7 @@ description: "Capture what an Ubuntu WSL machine has installed and configured in
 
 # Replicate WSL Machine
 
-Captures the machine layer (apt, Homebrew, mise, cargo, uv, standalone installers, systemd units, git repos) into a manifest, and applies it to a target distro. The dotfiles layer is chezmoi's: run the dotfiles repo's `setup-dotfiles` skill for it, between the `brew` and `mise` phases.
+Captures the machine layer (apt, Homebrew, mise, cargo, uv, standalone installers, Neovim's Mason tools, systemd units, git repos) into a manifest, and applies it to a target distro. The dotfiles layer is chezmoi's: run the dotfiles repo's `setup-dotfiles` skill for it, between the `brew` and `mise` phases.
 
 Scripts are in `scripts/`, relative to this file. Each prints what it did; quote that output when reporting.
 
@@ -23,6 +23,8 @@ Then review before committing:
 
 - An installer that prompts (a license, a menu) reads `/dev/tty` and hangs unattended. Record it as `manual <binary> '<command>'`. Never answer a license prompt for the user.
 - `local-bin.txt` lists everything in `~/.local/bin` and `~/.cargo/bin`. Each tool not covered by apt, brew, mise, cargo, or uv needs an `inst <binary> '<command>'` line in `installers.sh`. Find the command in `~/.zsh_history` (`grep -aE 'curl[^|]*\| *(ba)?sh'`) or the tool's docs. Never guess an installer URL. Leave it as `todo <binary>` and tell the user.
+- Capture ends by listing what in `~/.config` chezmoi does not manage. That config is lost on the target, the way the Neovim, Helix, and Prettier configs once were. For each entry that is the user's own config, offer to `chezmoi add` it. Skip caches, logs, session state, and anything holding a token (`gh/hosts.yml`, `chezmoi/`), which the dotfiles repo's `run_once_setup-secrets.sh` handles.
+- A tool in `local-bin.txt` that a config depends on still needs its `inst` line. Neovim's clipboard on WSL needs `win32yank.exe`; without it, `"+` yanks go nowhere and `:checkhealth` reports `No clipboard tool found`.
 - Before capturing, check `chezmoi status`. Unpushed dotfile drift won't reach the target; offer to `chezmoi re-add` it and show the diff first.
 - `user-services/*.service` have `$HOME` rewritten to `%h`. Any other absolute path in them (a version-manager shim, a `/run/user/...` path) breaks on the target. Point it at a stable path, or tell the user.
 
@@ -57,7 +59,8 @@ Then, in order:
 1. `eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"`, then `gh auth login` in the target. Brew is not on PATH until the dotfiles land. It is interactive, so ask the user to run `wsl.exe -d <name>` and do it there.
 2. The `setup-dotfiles` skill: `chezmoi init --apply unional/dotfiles`. It prompts for tokens, so the user runs it.
 3. Commit signing, below. The gitconfig sets `commit.gpgsign = true`, so every commit fails until it is done.
-4. `apply.sh .bootstrap/manifest mise cargo uv installers services repos finish`
+4. `apply.sh .bootstrap/manifest mise cargo uv installers editors services repos finish`
+   `editors` needs the dotfiles (`~/.config/nvim`) and node from mise. It restores the plugins pinned in `lazy-lock.json`, runs their builds, and installs the Mason tools in `nvim-mason.txt`. That way the first `nvim` doesn't spend minutes installing. Treesitter parsers still compile the first time each filetype is opened.
 5. `wsl.exe --terminate <name>`, so the new login shell and systemd units take effect.
 
 To skip a phase, such as cloning repos, leave it out of the phase list. Every phase is idempotent. After a failure, rerun only the failed phases. `finish` removes the temporary passwordless sudo that `new-wsl.sh` granted. Run it last, even after failures.
@@ -92,6 +95,7 @@ It lists every gap by section and exits 1 if any exist. Report each gap as one o
 
 - a package renamed on the new Ubuntu release (the apt phase prints these)
 - a `todo` installer
+- an `nvim-plugin:` or `mason:` gap: rerun the `editors` phase, and if it prints `FAILED`, read `~/.local/state/nvim/mason.log`
 - a user service not yet enabled (enable it only after its program is configured)
 - the signing key not yet copied (see Commit signing)
 - a real failure

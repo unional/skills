@@ -10,9 +10,9 @@ Captures what my Ubuntu WSL machine has installed into a manifest, and rebuilds 
 
 ## What it does
 
-`capture.sh` records the machine layer into a manifest: apt packages and third-party sources, Homebrew formulae and casks, mise tools, cargo crates, uv pythons, the tools in `~/.local/bin`, systemd units, and every git repo under the roots you give it. It records no secrets. `new-wsl.sh` creates a distro with a user and systemd on. `apply.sh` installs the manifest phase by phase, and each phase is safe to rerun. `verify.sh` lists what the target still lacks.
+`capture.sh` records the machine layer into a manifest: apt packages and third-party sources, Homebrew formulae and casks, mise tools, cargo crates, uv pythons, the tools in `~/.local/bin`, Neovim's Mason tools, systemd units, and every git repo under the roots you give it. It records no secrets. `new-wsl.sh` creates a distro with a user and systemd on. `apply.sh` installs the manifest phase by phase, and each phase is safe to rerun. `verify.sh` lists what the target still lacks.
 
-Dotfiles stay with chezmoi. The manifest lives in the dotfiles repo, so another PC gets both.
+Dotfiles stay with chezmoi. Capture lists any `~/.config` that chezmoi doesn't manage, so editor and tool config isn't silently left behind. The manifest lives in the dotfiles repo, so another PC gets both.
 
 ## Install
 

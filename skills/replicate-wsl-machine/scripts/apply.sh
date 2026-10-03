@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # usage: apply.sh <manifest-dir> [phase...]
-# phases, in order: system apt brew mise cargo uv installers services repos finish
+# phases, in order: system apt brew mise cargo uv installers editors services repos finish
 # Idempotent: every phase skips what is already present. Run as the target user.
 set -uo pipefail
 m=$(cd "${1:?usage: apply.sh <manifest-dir> [phase...]}" && pwd); shift
-all=(system apt brew mise cargo uv installers services repos finish)
+all=(system apt brew mise cargo uv installers editors services repos finish)
 phases=("${@:-${all[@]}}")
 failed=()
 log() { printf '\n== %s\n' "$*"; }
@@ -71,6 +71,33 @@ phase_installers() {
   todo() { echo "TODO no installer recorded: $1"; }
   manual() { command -v "$1" >/dev/null && { echo "have $1"; return; }; echo "RUN YOURSELF (interactive): $2"; }
   . "$m/installers.sh"
+}
+
+# Needs the dotfiles applied (the nvim config) and node from mise (Mason's npm-based tools).
+phase_editors() {
+  command -v nvim >/dev/null && [ -f ~/.config/nvim/init.lua ] || { echo "no nvim or no ~/.config/nvim yet; apply the dotfiles, then rerun: apply.sh $m editors"; return 0; }
+  # Plugin builds (markdown-preview's binary download) run async; the sleep lets them finish before nvim quits.
+  nvim --headless "+Lazy! restore" "+sleep 30" +qa >/dev/null 2>&1
+  [ -s "$m/nvim-mason.txt" ] || return 0
+  # Not :MasonInstall, which errors on a package LazyVim's ensure_installed already started at startup.
+  # Start only what is missing, then wait until nothing is installing.
+  local lua; lua=$(mktemp --suffix=.lua)
+  cat > "$lua" <<'LUA'
+require("lazy").load({ plugins = { "mason.nvim" } })
+local registry = require("mason-registry")
+registry.refresh()
+local pkgs = vim.tbl_map(registry.get_package, vim.split(vim.env.MASON_PKGS, "%s+", { trimempty = true }))
+for _, p in ipairs(pkgs) do
+  if not p:is_installed() and not p:is_installing() then p:install() end
+end
+vim.wait(900000, function()
+  return vim.iter(pkgs):all(function(p) return not p:is_installing() end)
+end, 1000)
+for _, p in ipairs(pkgs) do io.write((p:is_installed() and "have " or "FAILED ") .. p.name .. "\n") end
+LUA
+  MASON_PKGS=$(cat "$m/nvim-mason.txt") nvim --headless -c "luafile $lua" -c qa 2>/dev/null | tee /dev/stderr | grep -q '^FAILED' && failed+=(editors)
+  rm -f "$lua"
+  echo "treesitter parsers compile on first open of each filetype"
 }
 
 phase_services() {

@@ -23,6 +23,13 @@ inst() { command -v "$1" >/dev/null || gap "$1"; }
 todo() { gap "$1 (no installer recorded)"; }
 manual() { command -v "$1" >/dev/null || gap "$1 (interactive installer: $2)"; }
 . "$m/installers.sh"
+section "editors"
+if command -v nvim >/dev/null && [ -f ~/.config/nvim/init.lua ]; then
+  gap $(nvim --headless -c 'lua for _, p in ipairs(require("lazy").plugins()) do if not p._.installed then io.write("nvim-plugin:" .. p.name .. "\n") end end' -c qa 2>/dev/null)
+  [ -s "$m/nvim-mason.txt" ] && gap $(comm -23 <(sort "$m/nvim-mason.txt") <(ls ~/.local/share/nvim/mason/packages 2>/dev/null | sort) | sed 's/^/mason:/')
+else
+  gap "nvim config (~/.config/nvim) not applied"
+fi
 section "user services (copied / enabled)"
 while read -r u; do
   [ -f ~/.config/systemd/user/"$u" ] || gap "$u not copied"

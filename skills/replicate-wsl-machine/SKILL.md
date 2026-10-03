@@ -24,6 +24,7 @@ Then review before committing:
 - An installer that prompts (a license, a menu) reads `/dev/tty` and hangs unattended. Record it as `manual <binary> '<command>'`. Never answer a license prompt for the user.
 - `local-bin.txt` lists everything in `~/.local/bin` and `~/.cargo/bin`. Each tool not covered by apt, brew, mise, cargo, or uv needs an `inst <binary> '<command>'` line in `installers.sh`. Find the command in `~/.zsh_history` (`grep -aE 'curl[^|]*\| *(ba)?sh'`) or the tool's docs. Never guess an installer URL. Leave it as `todo <binary>` and tell the user.
 - Capture ends by listing what in `~/.config` chezmoi does not manage. That config is lost on the target, the way the Neovim, Helix, and Prettier configs once were. For each entry that is the user's own config, offer to `chezmoi add` it. Skip caches, logs, session state, and anything holding a token (`gh/hosts.yml`, `chezmoi/`), which the dotfiles repo's `run_once_setup-secrets.sh` handles.
+- It then lists unmanaged `~/.claude` entries, with Claude Code's runtime state left out. chezmoi carries `settings.json`, but not the scripts it runs: the status line script and hook scripts. The new distro once came up with `statusLine` pointing at a `statusline.sh` that was never copied. `chezmoi add` each one that is the user's own. A script another tool installs, such as a hook its `init` writes, is reinstalled by running that tool's `init` on the target.
 - A tool in `local-bin.txt` that a config depends on still needs its `inst` line. Neovim's clipboard on WSL needs `win32yank.exe`; without it, `"+` yanks go nowhere and `:checkhealth` reports `No clipboard tool found`.
 - Before capturing, check `chezmoi status`. Unpushed dotfile drift won't reach the target; offer to `chezmoi re-add` it and show the diff first.
 - `user-services/*.service` have `$HOME` rewritten to `%h`. Any other absolute path in them (a version-manager shim, a `/run/user/...` path) breaks on the target. Point it at a stable path, or tell the user.
@@ -97,5 +98,6 @@ It lists every gap by section and exits 1 if any exist. Report each gap as one o
 - a `todo` installer
 - an `nvim-plugin:` or `mason:` gap: rerun the `editors` phase, and if it prints `FAILED`, read `~/.local/state/nvim/mason.log`
 - a user service not yet enabled (enable it only after its program is configured)
+- a `claude code` gap: a script `~/.claude/settings.json` runs is missing. `chezmoi add` it on the source and reapply, or copy it from the source distro with `wsl.exe -d <source> --cd '~' -- cat <path>`
 - the signing key not yet copied (see Commit signing)
 - a real failure

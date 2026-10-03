@@ -35,6 +35,10 @@ while read -r u; do
   [ -f ~/.config/systemd/user/"$u" ] || gap "$u not copied"
   systemctl --user is-enabled -q "$u" 2>/dev/null || gap "$u not enabled"
 done < "$m/user-services/enabled.txt"
+section "claude code (files settings.json runs)"
+[ -f ~/.claude/settings.json ] && gap $(jq -r '.statusLine.command // empty, (.hooks // {} | .[][].hooks[]?.command)' ~/.claude/settings.json \
+  | grep -oE "(~|\\\$HOME|$HOME)/[^ \"';|)]+" | sed "s#^~#$HOME#; s#^\\\$HOME#$HOME#" | sort -u \
+  | while read -r f; do [ -e "$f" ] || echo "${f/#$HOME/\~}"; done)
 section "repos"
 [ -f "$m/repos.tsv" ] && gap $(while IFS=$'\t' read -r path _; do [ -d "$HOME/$path/.git" ] || echo "$path"; done < "$m/repos.tsv")
 section "signing"

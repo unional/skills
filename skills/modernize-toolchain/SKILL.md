@@ -21,7 +21,7 @@ Not for: changing what the package *exports* (that is an API change, and a relea
 
 Most of an old repo's outdated list is deleted by the swap, and the deleted ones are the expensive upgrades — `eslint` 8→10 with its plugin ecosystem, `webpack-cli` 5→7, `@typescript-eslint` 5→8. Bumping those first is work thrown away.
 
-On the worked example, **11 of 18 outdated packages were removed rather than upgraded.** Budget the phase on that ratio, not on the length of the outdated list.
+On the worked example, **most outdated packages were removed rather than upgraded.** Budget the phase on that ratio, not on the length of the outdated list.
 
 Do dependencies, toolchain and build as **one mission**. Splitting them is what creates the wasted bumps.
 
@@ -132,7 +132,7 @@ New tools drag in native binaries (`unrs-resolver` with jest 30, `esbuild`, `@sw
 | 10.x | `pnpm.onlyBuiltDependencies` | array | `package.json` |
 | 11.x | `allowBuilds` | map | `pnpm-workspace.yaml` |
 
-On 10.x (`cyberuni/resolve.imports`, `pnpm@10.34.5`):
+On 10.x (`cyberuni/resolve.imports`):
 
 ```jsonc
 "pnpm": { "onlyBuiltDependencies": ["esbuild", "turbo"] }
@@ -150,7 +150,7 @@ Under pnpm 11, `onlyBuiltDependencies` is **silently ignored**. Under pnpm 10 it
 
 The 11 map is not a list. Written as a YAML sequence, pnpm rewrites the file into a half-broken hybrid: `'0': turbo` sitting beside `turbo: set this to true or false`.
 
-**On pnpm 11, `turbo` 1.x must be `false`.** Its postinstall overwrites its own `bin/turbo` JS shim with the raw platform ELF, pnpm links that as a node script, and it dies with `SyntaxError: Invalid or unexpected token` partway into the binary. Omitting `turbo` is not the same as setting it false: omission re-triggers `ERR_PNPM_IGNORED_BUILDS`. turbo 2.x does not have the problem (`unional/type-plus` runs 2.9.14 clean), and the array form has no observed equivalent of an explicit `false`.
+**On pnpm 11, `turbo` 1.x must be `false`.** Its postinstall overwrites its own `bin/turbo` JS shim with the raw platform ELF, pnpm links that as a node script, and it dies with `SyntaxError: Invalid or unexpected token` partway into the binary. Omitting `turbo` is not the same as setting it false: omission re-triggers `ERR_PNPM_IGNORED_BUILDS`. turbo 2.x does not have the problem (`unional/type-plus` runs turbo 2.x clean), and the array form has no observed equivalent of an explicit `false`.
 
 Read the file again after any failed install. pnpm rewrites `pnpm-workspace.yaml` during an `ERR_PNPM_IGNORED_BUILDS` failure and inserts its own placeholder `allowBuilds` block. A hand-edit added on top then fails with a duplicate-key YAML error that reads as if your edit were malformed.
 

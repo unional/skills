@@ -16,48 +16,28 @@ The Version Packages PR is the release gate, and that gate is deliberate — wit
 
 ## The failure this exists to fix
 
-A changesets release PR can sit unmergeable forever **with nothing reporting a problem**.
+A changesets release PR can sit unmergeable forever **with nothing reporting a problem**. The required context (`code / all-checks`) never appears, and branch protection blocks the merge on a check that will never exist. Nothing is red and there is no failing job to open. This is green-by-absence, the same shape as a release workflow that references a file that does not exist.
 
-The changesets action opens and updates `changeset-release/main` using the built-in
-`GITHUB_TOKEN`. **GitHub does not run workflows for events raised by `GITHUB_TOKEN`** — a
-deliberate guard against workflows triggering themselves in a loop. The run is still recorded, so it
-looks like something happened:
+There are two causes, and the release workflow the repo calls decides which one you have:
+
+| Release workflow | Opens the PR with | What happens to the PR's `pull_request` runs |
+| --- | --- | --- |
+| `pnpm-release-changeset.yml` (token variant) | the `CI_GITHUB_TOKEN` PAT | the runs fire and are held in `action_required` until approved, because the `first_time_contributors` policy holds a bot with no merged commit in the repo |
+| `pnpm-release-changeset-oidc.yml` (secretless) | the built-in `GITHUB_TOKEN` | the runs do not fire: GitHub does not run workflows for events raised by `GITHUB_TOKEN`, a guard against workflows triggering themselves. A run may still be recorded, as `action_required` with zero jobs |
+
+`cyberuni/.github`'s `pnpm-release-changeset-oidc.yml` states the trade-off in its own header: "No CI_GITHUB_TOKEN. Uses the built-in GITHUB_TOKEN with elevated `permissions`. Trade-off: a PR opened with GITHUB_TOKEN does not trigger `on: pull_request`". Removing the long-lived PAT was the point of the secretless migration. This is the cost.
+
+Tell them apart by approving and reading the result, not by the label:
 
 ```bash
 gh api repos/<o>/<r>/actions/runs/<id> --jq '{status,conclusion,actor:.actor.login}'
-# {"status":"completed","conclusion":"action_required","actor":"github-actions[bot]"}
 gh api repos/<o>/<r>/actions/runs/<id>/jobs --jq '.jobs | length'
-# 0
 ```
 
-**`action_required` with zero jobs is the signature.** Nothing executed. The required context
-(`code / all-checks`) therefore never appears, and branch protection blocks the merge on a check that
-will never exist.
+- **Held by the approval policy (token variant).** Approving moves the run to `queued` and jobs appear. Treat the approval as a step of every release: the policy is meant to clear once the bot has a merged commit, but it has not reliably done so.
+- **Suppressed (secretless variant).** There is no run to approve, or approving produces no jobs. Use the empty-commit fallback in step 3, which a real user's push fires normally.
 
-Nothing is red. There is no failing job to open. The release simply never ships.
-
-**This is green-by-absence** — the same shape as a release workflow that references a file that does not
-exist. Both look fine because nothing ran.
-
-### This is a known trade-off, not a misconfiguration
-
-`cyberuni/.github`'s `pnpm-release-changeset-oidc.yml` says so in its own header:
-
-> No CI_GITHUB_TOKEN. Uses the built-in GITHUB_TOKEN with elevated `permissions`.
-> Trade-off: a PR opened with GITHUB_TOKEN does not trigger `on: pull_request`
-
-Removing the long-lived PAT was the point of the secretless migration. This is the cost, and it is paid
-per release.
-
-### Two things it is *not*
-
-- **Not the fork-approval policy.** `actions/permissions/fork-pr-contributor-approval` is often set to
-  `first_time_contributors`, which looks like the culprit and is not: it governs **fork** PRs, and the
-  release PR is same-repo (`isCrossRepository=false`). Changing it fixes nothing here, and its three
-  values (`first_time_contributors_new_to_github`, `first_time_contributors`,
-  `all_external_contributors`) offer no way to exempt a bot anyway.
-- **Not a status `github-actions[bot]` can graduate out of.** There is no contributor standing to
-  promote. The only lever is **which identity opens the PR**.
+Changing the fork-approval policy is not a fix for either case. The policy exists for fork PRs, its three values (`first_time_contributors_new_to_github`, `first_time_contributors`, `all_external_contributors`) offer no way to exempt a bot, and making it stricter only adds approvals.
 
 ### If you want it to stop happening
 
@@ -67,7 +47,7 @@ Have the release PR opened by an identity whose events do trigger workflows:
 |---|---|
 | **GitHub App installation token** for `changesets/action` | short-lived, no long-lived secret — the principled fix |
 | PAT (`CI_GITHUB_TOKEN`) | reintroduces exactly the long-lived secret the migration removed |
-| leave it, approve per release | zero setup, one API call each time — what this skill does |
+| leave it | zero setup; one approval or one empty commit per release, which is what this skill does |
 
 **None of these makes a release automatic.** See "Does fixing this risk an accidental release?" below.
 
@@ -134,16 +114,18 @@ gh pr merge <n> --repo <o>/<r>            # enqueues where a merge queue exists
 A merged release PR is not a release.
 
 ```bash
-npm view <pkg> version
-npm view <pkg> dist-tags
+curl -s -H "Accept: application/vnd.npm.install-v1+json" https://registry.npmjs.org/<pkg> \
+  | jq '{latest: ."dist-tags".latest, tags: ."dist-tags"}'
 ```
+
+Read the registry directly. `npm view` can serve a cache that lags a publish by minutes, long enough to conclude a release failed when it succeeded.
 
 For a package in **prerelease mode** (`.changeset/pre.json` exists), `latest` will not move — the release lands on the prerelease tag. Check `dist-tags.<tag>`, and do not read an unchanged `latest` as a failure.
 
 Confirm provenance where the repo publishes via OIDC:
 
 ```bash
-npm view <pkg> dist.attestations
+curl -s https://registry.npmjs.org/<pkg>/<version> | jq .dist.attestations
 ```
 
 ## Does fixing this risk an accidental release?
@@ -166,13 +148,13 @@ So the gate that matters — a human or an explicitly instructed agent merging t
 untouched.
 
 **What you would lose is protection-by-breakage.** Today nothing can merge a release PR because it can
-never go green. That is not a designed control, and it is exactly what hid a release stuck for 27 days.
+never go green. That is not a designed control,.
 Trading it for a real gate is the improvement.
 
 ## What NOT to do
 
 - **Do not use `gh pr merge --admin`.** It merges by skipping the verification rather than running it. On a release PR — the one commit that reaches users — skipping the check is least defensible, and the fix costs one API call.
-- **Do not go changing `approval_policy`.** It is not the cause (see above), it guards genuine fork PRs, and it cannot exempt a bot. Changing it is a settings edit that fixes nothing.
+- **Do not go changing the fork-approval policy.** It is not the fix (see above), it guards genuine fork PRs, and it cannot exempt a bot.
 - **Do not release on your own initiative.** This skill runs when the owner asks for a release. Landing dependency PRs is routine; publishing is not.
 - **Do not treat a merged PR as a shipped release** — check the registry.
 - **Do not approve a run on a branch you have not read.** Approving executes that branch's workflows; on a release PR the diff should be only `CHANGELOG.md` and version bumps.
@@ -188,7 +170,7 @@ for r in $(gh repo list <owner> --no-archived --source -L 200 --json nameWithOwn
 done
 ```
 
-Any result older than a couple of days is a release that stopped shipping. One found this way had been open **27 days**.
+Any result older than a couple of days is a release that stopped shipping.
 
 ## References
 

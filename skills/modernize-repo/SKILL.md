@@ -31,7 +31,7 @@ gh secret list --repo <o>/<r>
 
 #### Diagnose the evidence before you diagnose the repo
 
-Four false conclusions cost real time in the sweep, and each came from trusting a signal that meant something narrower than it looked.
+Each of these false conclusions cost real time in the sweep, and each came from trusting a signal that meant something narrower than it looked.
 
 | Signal | What it actually proves | Read it correctly |
 |---|---|---|
@@ -66,7 +66,7 @@ Transfer before the later phases, not after: trusted publishing pins `owner/repo
 
 ### 3. Settings baseline
 
-Invoke **apply-repo-baseline**. Check mode first, apply after showing the diff.
+First check for a legacy CI layout (a single `nodejs.yml`; see phase 6). If the repo has one, make phase 6's archive / drop / migrate decision before the baseline: the baseline's required `code / all-checks` context cannot report from a legacy pipeline, so applying the ruleset leaves the repo unmergeable. Then invoke **apply-repo-baseline**. Check mode first, apply after showing the diff.
 
 Two couplings matter for what follows: a repo whose release uses OIDC needs `default_workflow_permissions: write`, and `strict_required_status_checks_policy` must be `false` if a merge queue is coming.
 
@@ -143,7 +143,7 @@ unfixed one blocks the release with everything else green. **setup-secretless-re
 commands and the defect catalogue; the sweep found five packages declaring a licence they do not ship
 and three shipping their own tests.
 
-### 6. Legacy CI layout, if present
+### 6. Legacy CI layout, if present (decide before phase 3)
 
 A repo still on a single `nodejs.yml` (calling `typescript-build` / `typescript-test` / `npm-release`) predates the `pull-request.yml` + `release.yml` split and will not satisfy a `code / all-checks` required context.
 
@@ -154,7 +154,7 @@ Decide before migrating: archive the repo, delete the workflow, or migrate. Do n
 Invoke **modernize-toolchain**. It is a whole phase, not a bump pass.
 
 **Do the toolchain swap before the version bumps.** Most of an old repo's outdated list is *deleted*
-by the swap, and the deleted ones are the expensive upgrades. On `color-map`, 11 of 18 outdated
+by the swap, and the deleted ones are the expensive upgrades. On `color-map`, most outdated
 packages were removed rather than upgraded. Bumping first throws that work away.
 
 Do not split dependencies, toolchain and build into separate missions — the split is what creates
@@ -170,15 +170,14 @@ Majors stay manual; they break builds in ways CI catches but humans should choos
 
 Claiming done without evidence is the failure mode this whole pass exists to remove.
 
-**What decides the release depends on the tool, and the answer changed with the merge baseline.**
+**What decides the release depends on the tool.**
 
 On **changesets** — the destination for every repo here — the *changeset file* decides, and the PR
 title publishes nothing. So the failure mode is omission: a PR that changes the published package
 with no changeset produces a green release run that **publishes nothing**, and `dist-tags.latest`
 never moves. That is the quiet way a "finished" repo fails its own proof below.
 
-On a repo **not yet migrated**, commit messages decide. Under the merge-commit baseline that is
-worse than it used to be: every branch commit reaches `main` and gets analyzed, so a stray `feat:`
+On a repo **not yet migrated**, commit messages decide. Under the merge-commit baseline every branch commit reaches `main` and gets analyzed, so a stray `feat:`
 in a WIP commit cuts an unintended release. It is one more reason to migrate before proving.
 
 Either way, pick against what the published artifact does, not how much work the PR was:

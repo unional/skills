@@ -65,8 +65,7 @@ one and the release run goes green and publishes **nothing** — see the proof s
 Beyond matching the rest of the estate, it is the only one the shared workflows fully cover.
 `cyberuni/.github` carries `pnpm-*` and `bun-*` reusable workflows and **no `yarn-*` at all** — so a
 yarn repo bound for the org has nowhere to point its `code` job or its release, and converting stops
-being a later phase and becomes a precondition. Verified 2026-08-08; it is what blocked three repos
-in the first OTP batch.
+being a later phase and becomes a precondition. It blocked repos in the first OTP batch.
 
 pnpm's strict, non-hoisted `node_modules` is also the point, not a side effect: it surfaces
 undeclared dependencies the repo was resolving by accident. Expect the conversion to expose
@@ -165,7 +164,7 @@ Reconcile in the same PR that introduces changesets or first uses it, not in a f
 
 Two production incidents, both on repos that were **already** on changesets and so skipped every
 migration instruction: `fsa-emitter` published `0.0.0` and it took `latest`, and `satisfier` published
-`0.0.0-development` and held `latest` for two weeks.
+`0.0.0-development` and held `latest` until fixed.
 
 Behind-the-registry is a history artifact rather than carelessness. A repo that went
 standard-version → semantic-release → changesets loses versions on the way: standard-version commits
@@ -233,11 +232,10 @@ Both exist in `unional/.github` **and** `cyberuni/.github`. A repo on yarn or np
 
 `pnpm-release-semantic-oidc.yml` and `yarn-release-semantic-oidc.yml` still exist so unmigrated
 repos keep publishing. **They are not destinations.** Do not point a repo at one, and do not
-reintroduce the retired rule that simple single-package repos take semantic-release.
+choose semantic-release for a simple single-package repo.
 
 `cyberuni` has **no `yarn-*` workflows at all** — not verify, not release — so for an org-bound repo
-the conversion is a precondition of this step, not a later phase. Verified 2026-08-08; it is what
-blocked three repos in the first OTP batch. Confirm what the owner actually carries rather than
+the conversion is a precondition of this step, not a later phase. It blocked repos in the first OTP batch. Confirm what the owner actually carries rather than
 assuming the two are the same:
 
 ```bash
@@ -282,7 +280,7 @@ Add the secretless workflow **alongside** the token-based one in the `.github` r
 ### Which ref the caller pins, and why `@v1` is now a hazard
 
 The ref is not cosmetic. `@v1` of the changeset release workflows runs `npm install -g npm@latest`;
-only `@v2` and `@main` pin `npm@11`. npm 12 went stable on 2026-07-08 and wraps `npm info --json` in
+only `@v2` and `@main` pin `npm@11`. npm 12 wraps `npm info --json` in
 an array (changesets/changesets#2164), which breaks publishing under **both** changesets CLI majors:
 
 | changesets CLI | What npm 12 does to it |
@@ -358,7 +356,7 @@ Registering trust is additive: token publishing keeps working until explicitly d
 ### The Version PR looks checkless either way, for two different reasons
 
 The "Version Packages" PR reports nothing on both sides of this migration, and the two causes need
-opposite responses. **Which one you have is decided by the workflow the repo now calls**, so read
+different responses. **Which one you have is decided by the workflow the repo now calls**, so read
 that first rather than the symptom:
 
 | Release workflow | How the PR is opened | What reports |
@@ -366,30 +364,31 @@ that first rather than the symptom:
 | `pnpm-release-changeset.yml` — token variant | `checkout` `token:` and `github-token:` are the `CI_GITHUB_TOKEN` **PAT** | runs fire, then wait in `action_required` |
 | `pnpm-release-changeset-oidc.yml` — secretless | the built-in **`GITHUB_TOKEN`** | **nothing at all** |
 
-**On the token variant the PR needs a one-time workflow approval.** Its `pull_request` runs do fire,
-but land in `action_required` under the `first_time_contributors` policy until `github-actions[bot]`
-has a merged commit in the repo:
+**On the token variant the PR's runs need approval.** They do fire, but the `first_time_contributors`
+policy holds them in `action_required` until `github-actions[bot]` has a merged commit in the repo.
+Approving moves them to `queued`. The policy is meant to clear after that merge but has not done so
+reliably, so check for held runs on every release rather than assuming they are gone:
 
 ```bash
 gh run list --repo <o>/<r> --status action_required
 gh api -X POST repos/<o>/<r>/actions/runs/<id>/approve
 ```
 
-After that merge the bot is a known contributor and later version PRs run unattended.
-
-**On the secretless workflow that remedy does not apply, and there is no run to approve.** A PR
-opened with `GITHUB_TOKEN` does not trigger `on: pull_request` workflows at all; the `-oidc`
-workflow says so in its own header comment. So under a required-check ruleset the Version PR is
-permanently `BLOCKED` and merges only by **admin override**. All five batch-2 repos were merged that
-way. Budget for it as a standing cost of the migration rather than a fault to diagnose — a reader
-following the `action_required` path here will hunt for a run that does not exist.
+**On the secretless workflow that remedy does not apply.** A PR opened with `GITHUB_TOKEN` does not
+trigger `on: pull_request` workflows at all; the `-oidc` workflow says so in its own header comment.
+A run may be recorded for it as `action_required` with zero jobs, and approving that run produces
+nothing. So under a required-check ruleset the Version PR is `BLOCKED` until a real user's push
+starts the checks: push an empty commit to `changeset-release/main` (**ship-it** step 3 has the
+commands). The changesets action force-pushes over it on its next run, so it costs nothing. Admin
+override also merges it, but skips the verification, so prefer the empty commit. Budget for one
+of these per release as a standing cost of the migration rather than a fault to diagnose.
 
 Three exits look open and are not. Do not spend a session re-deriving them:
 
 - **A head-branch exemption.** Rulesets key on the **target** ref, so `changeset-release/**` cannot be
   exempted.
-- **A merge queue.** A PR must pass its required checks before it can be queued, so the queue is
-  downstream of the block.
+- **A merge queue.** A queue merges the PR only after its required checks report, so it is downstream
+  of the block and does not remove it.
 - **A same-named commit status posted by another job.** A check and a status sharing one name must
   **both** pass, so this adds a second thing to satisfy rather than satisfying the first.
 

@@ -14,7 +14,7 @@ Known breaks in __VERSION__: __BREAKS__
 
 1. Branch off the latest `origin/<default>`. Do not reuse an old local branch.
 2. In every `package.json` (all workspaces, templates and test cases, but not `node_modules`), set `__PKG__` to `__VERSION__`. Keep the repo's range style.
-3. Bump every dependency on the owner's packages to its latest npm version (`npm view <pkg> version --prefer-online`). Keep the range style.
+3. Bump every dependency on the owner's packages to its latest npm version (the registry document at `https://registry.npmjs.org/<pkg>`, read directly because `npm view` can lag). Keep the range style.
 4. Lift the minimum-release-age gate for `__PKG__` and for any freshly released owned package the install needs (`repobuddy:min-release-age`). Prefer an auto-expiring exemption, and never turn the gate off globally. Many repos already exempt first-party packages.
 5. Reinstall so the lockfile updates. Fix what the new version breaks. Avoid adding a new runtime dependency where an inline change works, since the publish gate blocks them. Run the repo's full verify.
 6. For published packages that list a bumped package in `dependencies` or `peerDependencies`, add a patch changeset (`buddy-changesets:changesets`), or follow the repo's release convention. Private packages get no changeset.

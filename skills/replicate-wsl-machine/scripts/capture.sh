@@ -67,7 +67,22 @@ for r in "${roots[@]}"; do
   done
 done | sort > "$out/repos.tsv"
 
+if [ -d ~/.local/share/nvim/mason/packages ]; then
+  ls ~/.local/share/nvim/mason/packages > "$out/nvim-mason.txt"
+fi
+
 [ -f "$out/installers.sh" ] || cp "$(dirname "$0")/../assets/installers.sh" "$out/installers.sh"
 
 echo "captured into $out:"
 wc -l "$out"/apt/packages.txt "$out"/Brewfile "$out"/local-bin.txt "$out"/repos.tsv 2>/dev/null | sed '$d'
+
+# Config in ~/.config that chezmoi does not carry never reaches the target. Review each entry.
+if command -v chezmoi >/dev/null; then
+  echo "~/.config entries chezmoi does not manage (chezmoi add the ones that are your config):"
+  chezmoi unmanaged --path-style=absolute ~/.config | sed "s#^$HOME#  ~#"
+  # ~/.claude mixes config (the scripts settings.json runs) with Claude Code's own runtime state.
+  echo "~/.claude entries chezmoi does not manage, runtime state left out:"
+  chezmoi unmanaged --path-style=absolute ~/.claude \
+    | grep -vE "^$HOME/\.claude/(\.credentials\.json|\.last-[^/]*|backups|cache|downloads|feedback|file-history|history\.jsonl|ide|plugins|policy-limits[^/]*|projects|remote-settings\.json|session-env|sessions|shell-snapshots|stats-cache\.json|statsig|telemetry|todos)$" \
+    | sed "s#^$HOME#  ~#"
+fi

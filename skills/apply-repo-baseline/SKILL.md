@@ -91,7 +91,7 @@ Start from `assets/branch-ruleset.json`. Then:
 
 #### The code-scanning rule is unsatisfiable when CodeQL is disabled — and CodeQL disables itself
 
-GitHub sets a scheduled workflow to `disabled_inactivity` after 60 days without repository activity. Four repos were found in that state during the 2026-08 sweep, `test-progress-tracker` with no analysis since **2022-08-18**. The file is still committed, so the §3 condition above passes on a `ls` and the rule goes on.
+GitHub sets a scheduled workflow to `disabled_inactivity` after 60 days without repository activity. The sweep found repos in that state, one with no analysis for years. The file is still committed, so the §3 condition above passes on a `ls` and the rule goes on.
 
 What follows is hard to read: the workflow is **silently absent from the PR**. No check appears at all, so it looks like a bad trigger rather than a disabled workflow, and the PR sits `BLOCKED` with everything else green and nothing to click. The rule is permanently unsatisfiable.
 
@@ -102,10 +102,10 @@ gh api "repos/$R/code-scanning/analyses?per_page=1" --jq '.[0].created_at'
 
 The rule: add `code_scanning` only after a fresh analysis has landed, and **not at all** where the repo has no CodeQL workflow. Three repos in the sweep had none (`async-fp`, `create`, `sort-configs`); there the org attach is the route, not the rule. Re-enable the workflow, then close and reopen the PR. That re-fires `pull_request` for a re-enabled workflow, so no empty commit is needed.
 
-#### Merge shape — MERGE, not SQUASH, and no linear history (revised 2026-08-09)
+#### Merge shape — MERGE, not SQUASH, and no linear history
 
 The owner wants **semi-linear** history: one merge commit per PR, individual commits preserved
-underneath. GitHub has no native semi-linear merge (requested since 2022, still unimplemented), so
+underneath. GitHub has no native semi-linear merge (a long-requested feature that does not exist), so
 the closest enforceable approximation is:
 
 | setting | value |
@@ -288,7 +288,7 @@ baseline layout self-declares, so none of it needs a `write` default:
 Where a repo lands in row three, prefer migrating it to the explicit-block shape
 (**setup-secretless-release**) and *then* lowering, rather than leaving `write` in place.
 
-Verified 2026-08-08: `unional/stable-context` (`read`, no block → `startup_failure`) against
+Verified on `unional/stable-context` (`read`, no block → `startup_failure`) against
 `unional/assertron` and `unional/path-equal` (`write`, no block → success, otherwise identical),
 `clibuilder/clibuilder` (`read` **with** block → success), and `cyberuni/search-packages`
 (block present → works, and would work under `read` too).
@@ -297,7 +297,7 @@ Verified 2026-08-08: `unional/stable-context` (`read`, no block → `startup_fai
 
 GitHub conflates *create* and *approve* behind this one flag, so `false` does not merely stop a
 workflow approving its own PR — it stops the changesets action opening the Version PR at all. All
-five batch-1 releases failed identically on this before the cause was found (2026-08-09). The two
+five batch-1 releases failed identically on this before the cause was found. The two
 `assets/actions-permissions*.json` ship `true` for that reason.
 
 Set `false` only on a repo with no workflow that opens PRs. Check before lowering:
@@ -361,7 +361,7 @@ so in the report and leave the repo listed as broken until one side is fixed.
 ## About panel — half of it is API-reachable, half is not
 
 The **Edit repository details** dialog mixes two kinds of setting, and only one can be automated.
-Verified against REST `PATCH /repos/{o}/{r}` and GraphQL `UpdateRepositoryInput` on 2026-08-16.
+Verified against REST `PATCH /repos/{o}/{r}` and GraphQL `UpdateRepositoryInput`.
 
 **"Use your GitHub Pages website" — automatable.** The checkbox is not a flag; it copies the Pages
 site URL into the plain `homepage` field. So the whole module is one PATCH, gated on three reads:
@@ -412,11 +412,10 @@ The first three rows constrain *other* actors, not the admin running the baselin
 report rather than implying the repo is now protected against its own owner's automation — that risk is
 governed by the auto-merge rule below, not by settings.
 
-#### The review rule costs more than "nothing" on a solo repo — verified 2026-08-09
+#### The review rule costs more than "nothing" on a solo repo
 
-Earlier guidance here said admin bypass keeps a solo maintainer unblocked "so it costs nothing now".
-That is wrong on two counts, both established by adding the rule to all three reference repos and
-then removing it again.
+Admin bypass does not keep a solo maintainer unblocked, so the rule is not free. Two reasons, both
+established by adding the rule to all three reference repos and then removing it again.
 
 1. **Bypass does not apply to the path you actually use.** You cannot approve your own PR, so every
    merge needs a bypass. `gh pr merge` returns `BLOCKED`, because with a queue it tries to *enqueue*
@@ -457,7 +456,7 @@ That is Mergify (account-level as often as repo-level), `dependabot-automerge.ym
 scanning**. That one lives in a *code security configuration*, and without it every repo created in
 the org starts with no code scanning at all — silently, and forever, because nothing later notices.
 
-There are **many orgs** (28 as of 2026-08-09: cyberuni, repobuddy, justland, clibuilder, mocktomata,
+There are **many orgs** (cyberuni, repobuddy, justland, clibuilder, mocktomata,
 type-plus, standard-log, …). Sweep them rather than fixing one at a time:
 
 ```bash
@@ -475,7 +474,7 @@ done
 ```
 
 Every org ships a GitHub-provided **"GitHub recommended"** configuration already — you do not create
-one. Applied across 26 orgs on 2026-08-09; two (`clean-code-projects`, `typings`) returned 403
+one. Two orgs (`clean-code-projects`, `typings`) returned 403
 because the account is not an owner there. Report those rather than retrying.
 
 Three things that are easy to get wrong:
@@ -488,7 +487,7 @@ Three things that are easy to get wrong:
 - **Do this before creating repos**, not after. It is the only part of the baseline that is
   retroactively impossible to apply for free.
 
-## Code scanning is attached from the ORG, not set on the repo — 2026-08-09
+## Code scanning is attached from the ORG, not set on the repo
 
 `PUT /repos/{o}/{r}/code-scanning/default-setup` returns **404**. That is not a permissions error,
 which is what makes it easy to misdiagnose — and it is also why the option cannot be found in the
@@ -517,8 +516,8 @@ gh api -X PUT "orgs/<org>/code-security/configurations/<id>/defaults" \
 
 **Verify with an analysis, not a state field.** `cyberuni/cyber-asana` reported
 `state: configured` with `languages: []`; the proof it was really running was
-`gh api "repos/$R/code-scanning/analyses?per_page=1"` showing 87 rules evaluated. That repo had **no
-code scanning for three weeks** after a commit deleted its CodeQL workflow "in favor of default
+`gh api "repos/$R/code-scanning/analyses?per_page=1"` showing the rules evaluated. That repo had **no
+code scanning for weeks** after a commit deleted its CodeQL workflow "in favor of default
 setup" that was never enabled — a state that reads as healthy from every settings page.
 
 ## Transitive advisories with no upgrade path — override, and date the override
@@ -601,39 +600,43 @@ Setup mode only — the per-repo files the baseline assumes. Owner-level content
 
 Prefer **OIDC/trusted publishing** for release (`pnpm-release-changeset-oidc.yml` under unional, `pnpm-release-changeset.yml` under the orgs) — no `NPM_TOKEN` or `CI_GITHUB_TOKEN` to rotate. Each package needs a trusted publisher registered at `npmjs.com/package/<name>/access` naming the repo and the **caller** workflow filename.
 
-## The version PR with no checks — approve once
+## The version PR with no checks
 
-Right after applying the baseline to a **newly created or newly transferred** repo, the changesets
-"Version Packages" PR appears to have no status checks, and so cannot satisfy the required
-`code / all-checks` context. It looks like the check will never arrive.
-
-Usually it already did. Under GitHub's default `first_time_contributors` approval policy, a repo where
-`github-actions[bot]` has not previously committed holds the bot's `pull_request` runs in
-`action_required` awaiting approval, so nothing reports:
+On a **newly created or newly transferred** repo, the changesets "Version Packages" PR can appear to
+have no status checks, and so cannot satisfy the required `code / all-checks` context. Which of two
+causes you have is decided by how the release workflow opens the PR. Read the runs before concluding
+anything, because held runs and no runs at all look identical on the PR:
 
 ```bash
-gh run list --repo "$R" --event pull_request --json headBranch,status,conclusion \
+gh run list --repo "$R" --event pull_request --json databaseId,headBranch,status,conclusion \
   --jq '.[]|select(.headBranch|startswith("changeset-release/"))'
 gh api "repos/$R/actions/runs/<id>" --jq '{event, conclusion, actor: .actor.login}'
-# {"event":"pull_request","conclusion":"action_required","actor":"github-actions[bot]"}
 ```
 
-**Read that list before concluding anything.** Held runs and no runs at all look identical on the PR
-and have different causes. A version PR opened with a PAT (`CI_GITHUB_TOKEN`) creates runs, which is
-the case above. One opened with the plain `GITHUB_TOKEN` creates none, because GitHub suppresses
-workflow triggers from that token. Nothing is held, nothing arrives, and the PR is genuinely checkless until the
-release migrates to the PAT or OIDC shape (**setup-secretless-release**). Under a required-check
-ruleset the checkless case merges only by admin override, which is another reason the bypass actor
-that a transfer wipes is load-bearing.
+- **Opened with a PAT (`CI_GITHUB_TOKEN`): the runs exist and are held.** Under GitHub's default
+  `first_time_contributors` approval policy, a repo where `github-actions[bot]` has no merged commit
+  holds the bot's `pull_request` runs in `action_required`. The PR is not checkless, its checks are
+  waiting. Approve them:
 
-Approve once. Afterwards the bot is a known contributor and later version PRs run unattended:
+  ```bash
+  gh run list --repo "$R" --status action_required
+  gh api -X POST "repos/$R/actions/runs/<id>/approve"
+  ```
 
-```bash
-gh run list --repo "$R" --status action_required
-gh api -X POST "repos/$R/actions/runs/<id>/approve"
-```
+  The policy is meant to clear once the bot has a merged commit, but on `cyberuni/cyber-asana` runs
+  kept landing in `action_required` after several approvals and several merged version PRs. Treat
+  approving the release PR's runs as a recurring step, not a one-off.
 
-Read the policy — repo level, then org — if you want to confirm which rule is holding the run:
+- **Opened with the plain `GITHUB_TOKEN`: no runs, and nothing to approve.** GitHub suppresses
+  workflow triggers from that token, so the PR is genuinely checkless until a real user's push starts
+  the checks (an empty commit to `changeset-release/main`; **ship-it** step 3) or the release
+  migrates to a GitHub App token. Under a required-check ruleset the alternative is an admin
+  override, which is another reason the bypass actor that a transfer wipes is load-bearing.
+
+A merge queue can merge the version PR once its checks have reported (`cyberuni/search-packages`
+merged it through the queue with no admin bypass). It does not remove the block on a checkless PR.
+
+To confirm which rule is holding a run, read the policy, repo level then org:
 
 ```bash
 gh api "repos/$R/actions/permissions/fork-pr-contributor-approval"
@@ -641,23 +644,15 @@ gh api "orgs/<org>/actions/permissions/fork-pr-contributor-approval"
 ```
 
 **Change nothing.** The policy is a sensible default; it is not a drift item and the baseline does
-not carry a setting for it.
-
-Two corrections from trying otherwise on 2026-08-09:
-
-- **Do not "harden" this to `all_external_contributors`.** It was tried on all three reference repos
-  and reverted. On a repo that has never had an external contributor, `first_time_contributors`
-  already gates *everyone*, so the stricter value buys nothing — while making the release PR's runs
-  need approval every time.
-- **"Self-clearing after one approval" is not reliable.** On `cyberuni/cyber-asana` the bot's runs
-  were still landing in `action_required` after several approvals and several merged version PRs.
-  Treat approving the release PR's runs as a recurring step, not a one-off.
+not carry a setting for it. Do not "harden" it to `all_external_contributors`: on a repo that has
+never had an external contributor, `first_time_contributors` already gates *everyone*, so the
+stricter value buys nothing while making the release PR's runs need approval every time.
 
 When clearing a backlog, **approve the newest run first**. Approving an older queued run last makes
-it start last and cancel the newer one through the shared concurrency group — which surfaces as a
+it start last and cancel the newer one through the shared concurrency group, which surfaces as a
 one-second "failure" on the required checks and looks like a broken workflow.
 
-Three dead ends, the first two tried and reverted on `unional/search-packages`:
+Three dead ends:
 
 - **Do not fabricate the check** with a no-op reusable workflow whose job name reproduces the
   required context (unional/search-packages#203, reverted in #204). It misdiagnoses the cause and
@@ -668,11 +663,6 @@ Three dead ends, the first two tried and reverted on `unional/search-packages`:
 - **Do not look for a head-branch exemption in the ruleset.** There is none to find. A branch
   ruleset's `conditions.ref_name` matches the **target** ref, so `changeset-release/**` never enters
   the match; excluding it exempts nothing, and the rule still applies to every PR aimed at `main`.
-
-A merge queue **can** merge the version PR once its runs are approved — verified on
-`cyberuni/search-packages`, which merged it through the queue with no admin bypass. Earlier guidance
-that a queue could never handle a checkless version PR was wrong; the PR is not checkless, its
-checks are waiting.
 
 ## What NOT to do
 
@@ -708,4 +698,4 @@ checks are waiting.
 
 ## References
 
-- `references/research.md` — where each default came from, the variance found across the six owners, and the drift numbers as of 2026-08-07.
+- `references/research.md` — where each default came from, the variance found across the six owners, and the drift numbers.

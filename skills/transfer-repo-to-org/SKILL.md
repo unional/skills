@@ -7,7 +7,7 @@ description: "Move a repo from a personal namespace into an organization without
 
 Moves one repo from a user namespace to an organization and repairs everything the transfer silently invalidates. Most of the repo's configuration survives; the parts that do not fail on the *next release*, not on the transfer, which is why this is a procedure and not a single API call.
 
-Proven end to end on `unional/search-packages` → `cyberuni/search-packages`, which then published `2.2.1` via OIDC and merged through a native queue. Rerun as a batch of five `unional/*` → `cyberuni/*` on 2026-08-24, which is where the ruleset finding in Step 6 came from: one repo is not enough to tell what a transfer drops, because a setting the repo never used looks identical whether it survived or not.
+Proven end to end on `unional/search-packages` → `cyberuni/search-packages`, which then published via OIDC and merged through a native queue. Rerun as a batch of five `unional/*` → `cyberuni/*`, which is where the ruleset finding in Step 6 came from: one repo is not enough to tell what a transfer drops, because a setting the repo never used looks identical whether it survived or not.
 
 ## When to use
 
@@ -108,7 +108,7 @@ Diff against Step 2. Two things are known to change:
 | Old URLs, including git remotes | redirect |
 | `default_workflow_permissions` | **resets to the org default** |
 
-The two bold rows were observed across all five repos of the 2026-08-24 batch. The "survive" rows rest on the single proving repo plus, for secrets, GitHub's own documentation. Treat them as expected rather than guaranteed, and diff instead of trusting the table.
+The two bold rows were observed across all five repos of the batch. The "survive" rows rest on the single proving repo plus, for secrets, GitHub's own documentation. Treat them as expected rather than guaranteed, and diff instead of trusting the table.
 
 OIDC needs `write`, so check it every time even when the org default is supposedly right:
 
@@ -121,7 +121,7 @@ A `read` default produces `startup_failure` with zero jobs and no logs on the ne
 
 ## Step 6 — Put the ruleset bypass actors back
 
-Every ruleset came back from the 2026-08-24 batch with `bypass_actors: []`. All five. The rules themselves were intact, nothing in the UI flagged the list as changed, and no check started failing, so the repo read as healthy.
+Every ruleset came back from the batch with `bypass_actors: []`. All five. The rules themselves were intact, nothing in the UI flagged the list as changed, and no check started failing, so the repo read as healthy.
 
 It bricks at the first release instead. A secretless Version PR is opened with the built-in `GITHUB_TOKEN`, which fires no `pull_request` workflows, so it carries **zero checks**. `code / all-checks` is required. With the bypass list empty there is nobody left who can merge it: an org owner pressing the button gets `Repository rule violations found`. Re-running CI cannot help, because there is no CI to re-run. The release sits there until someone restores the actor. Why the secretless Version PR carries no checks, and why a merge queue or a same-named commit status does not rescue it, belongs to **setup-secretless-release**.
 
@@ -157,18 +157,19 @@ Order matters and reversing it strands every PR: land the `merge_group` trigger 
 
 ## Step 9 — First release after the transfer
 
-Expect the version PR's runs to sit in `action_required`. In the new location `github-actions[bot]` has no merged commit, so the `first_time_contributors` policy holds its runs — the same one-time approval a fresh repo needs, re-armed by the move.
+Expect the version PR's runs to sit in `action_required` if the repo opens it with a PAT. In the new location `github-actions[bot]` has no merged commit, so the `first_time_contributors` policy holds its runs, the same hold a fresh repo has, re-armed by the move. (A repo on the secretless workflow has no runs to approve; see **ship-it**.)
 
 ```bash
 gh run list --repo <org>/<r> --status action_required
 gh api -X POST repos/<org>/<r>/actions/runs/<id>/approve
 ```
 
-Approve once; later releases run unattended. Then confirm the publish actually happened — a green run is not proof:
+Approve the held runs. Then confirm the publish actually happened — a green run is not proof:
 
 ```bash
-npm view <package> version
-npm view <package>@<version> dist.attestations
+curl -s -H "Accept: application/vnd.npm.install-v1+json" https://registry.npmjs.org/<package> \
+  | jq -r '."dist-tags".latest'
+curl -s https://registry.npmjs.org/<package>/<version> | jq .dist.attestations
 ```
 
 ## What NOT to do

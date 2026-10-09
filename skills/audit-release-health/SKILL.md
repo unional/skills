@@ -24,7 +24,7 @@ A combined recent-runs list drops the repos that matter most:
 gh run list --repo <o>/<r> --limit 40 --json workflowName,conclusion
 ```
 
-The window is measured in *runs*, not time, so a repo that stopped releasing in May and has been merging PRs ever since has pushed its last release run out of view. Those are exactly the repos broken longest. `color-map`, `fixture` and `events-plus` — dead since May 2026 — were missed this way on the first sweep and found only by a second, targeted pass.
+The window is measured in *runs*, not time, so a repo that stopped releasing months ago and has been merging PRs ever since has pushed its last release run out of view. Those are exactly the repos broken longest. `color-map`, `fixture` and `events-plus`, each dead for months, were missed this way on the first sweep and found only by a second, targeted pass.
 
 Query each repo's release workflow **directly**, one repo at a time:
 
@@ -93,7 +93,7 @@ gh api repos/<o>/<r>/contents/package.json --jq .content | base64 -d \
   | jq -c '{name, private, workspaces}'
 ```
 
-`private: true` at the root with no publishable workspace package means the pipeline has no output. Two of the twenty-one found in the original sweep (`monorepo-template`, `stable-context`) were exactly this.
+`private: true` at the root with no publishable workspace package means the pipeline has no output. `monorepo-template` and `stable-context` were exactly this.
 
 Two shapes will fool a naive check:
 
@@ -111,7 +111,7 @@ npm view <pkg> time.modified
 gh repo view <o>/<r> --json pushedAt --jq .pushedAt
 ```
 
-A repo pushed within the year whose package was last published years ago is publishing nothing regardless of what its runs say — `color-map` last published 2022-10, pushed 2026-08.
+A repo pushed within the year whose package was last published years ago is publishing nothing regardless of what its runs say — `color-map` had not published for years while still being pushed to.
 
 This is a **suspicion signal, not a verdict**: `pushedAt` moves on any branch push, and a repo can legitimately have had no releasable change. Flag these for a look; do not classify them from this alone.
 
@@ -131,7 +131,7 @@ gh api "repos/<o>/<r>/actions/runs?status=action_required&per_page=5" \
   --jq '.workflow_runs[] | "\(.name) \(.head_branch) \(.created_at)"'
 ```
 
-`BLOCKED` with an **empty check list** is the signature — nothing red, because nothing ran. One repo found this way had been stuck 27 days.
+`BLOCKED` with an **empty check list** is the signature — nothing red, because nothing ran. One repo found this way had been stuck for weeks.
 
 Report it; **ship-it** is the fix. This audit still changes nothing.
 

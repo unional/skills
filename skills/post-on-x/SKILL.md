@@ -1,6 +1,6 @@
 ---
 name: post-on-x
-description: "Draft, review, and plan posts on X (Twitter) to grow a developer account, using the ranking weights X publishes. Use when asked to 'draft a tweet', 'announce the release on X', 'write a thread', 'review this post', 'when should I post', 'how do I get more reach', or 'grow my X account', and after shipping a release worth announcing."
+description: "Draft, review, and plan posts on X (Twitter) to grow a developer account, using the ranking weights X publishes. Use when asked to 'draft a tweet', 'announce the release on X', 'plan the release posts', 'write a thread', 'review this post', 'when should I post', 'how do I get more reach', or 'grow my X account', and after shipping a release worth announcing."
 ---
 
 # Post on X
@@ -66,6 +66,28 @@ The table settles these decisions:
 When there is more than one post's worth, offer a thread: the first post stands alone, and each reply adds one concrete example. Do not claim threads get more reach. No reliable data says so.
 
 Return the draft in a code block with its character count. Do not post it. The user posts.
+
+## Roll out a release
+
+Do not post a bare "vX is out" with a changelog list. It earns likes from existing followers and few shares. Posting a feature right after it then loses reach to the author-diversity decay.
+
+Make the announcement a feature post instead:
+
+1. **Day 1: the announcement.** Open with the package and version ("type-plus 8.0:"), then the one change a stranger would forward. End with the link existing users need: the migration guide for a major, the release notes otherwise.
+2. **Then one feature per post, two to three days apart.** Each post leaves the candidate pool after 48 hours, so spacing gives every feature its own window without competing with the others.
+3. **Each post stands alone.** Mention the version in passing, show the change, and put the link last.
+4. **Reply under the announcement with a link to each later post**, so a reader who lands on the announcement finds the rest.
+
+Pick and order the features from the changelog:
+
+- Lead with the change that solves a problem people already had. A closed, long-standing issue counts.
+- Next, put the change that is easiest to show in a snippet or clip.
+- Save the "I didn't know the language could do that" change for later in the run. Novelty does not need the version number to land.
+- Skip internal refactors, renames, and removals unless the migration guide does not cover them.
+
+Four to five posts is enough for a major. A minor gets the day-1 post only. A patch gets no post unless it fixes a bug people complained about in public.
+
+Return the plan as a table of day, feature, and the hook sentence. Draft the day-1 post in full, and draft the others when the user asks.
 
 ## After posting
 

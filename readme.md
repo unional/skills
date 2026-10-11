@@ -38,6 +38,7 @@ Each skill has its own README with the full description and install command.
 | **[add-website](skills/add-website)** | Add an Astro + Starlight docs site to a repo, deploy it to GitHub Pages and enable Pages there, matching the cyberuni house layout. Insists every documented example come from a test assertion. |
 | **[sweep-dependency](skills/sweep-dependency)** | Move one package to a new version across every repo I own, leaf-first: dispatch pods, gate and merge each PR, release it, and verify the publish on npm before moving up. |
 | **[technical-writer](skills/technical-writer)** | One documentation standard: controlled plain prose, one home per fact, every external claim backed by a source. Also audits an existing corpus. |
+| **[post-on-x](skills/post-on-x)** | Draft, review, and plan X posts against the ranking weights X publishes. Re-checks the weights when stale, and turns disputed claims into tests on your own posts. |
 
 ## Installation
 

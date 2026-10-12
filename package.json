@@ -27,7 +27,7 @@
   },
   "devDependencies": {
     "@changesets/cli": "^3.0.2",
-    "universal-plugin": "^0.7.0"
+    "universal-plugin": "^0.14.0"
   },
   "packageManager": "pnpm@11.25.0"
 }

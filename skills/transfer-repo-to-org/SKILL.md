@@ -41,6 +41,7 @@ Re-register in the same sitting as the transfer. Never leave the repo overnight 
 | Admin on the repo, and org permission to create repos | `gh api repos/<o>/<r> --jq .permissions.admin` |
 | Target org confirmed **by the owner** | never pick one — see Step 1 |
 | npm >= 11.15.0 | `npm --version` — `npm trust` does not exist below this |
+| Target org allows `write` workflow permissions | `gh api orgs/<org>/actions/permissions/workflow --jq .default_workflow_permissions` — see Step 1 |
 | Interactive npm session | `npm login`; a legacy 2FA-bypass token is rejected for account changes with `E401 ... "You must be logged in to publish packages"`, even with `--otp` |
 
 ## Step 1 — Confirm the target org
@@ -53,6 +54,15 @@ gh api orgs/<org>/actions/secrets --jq '[.secrets[].name]'
 ```
 
 An org that already carries the secrets the repo needs turns per-repo copies into one shared copy — that is usually the deciding fact. An org with none offers only the merge queue, which may still be enough.
+
+Check the org's workflow-permission policy now, before the transfer. A repo takes the org default on arrival, and an org that forbids `write` rejects the repo-level fix in Step 5 with `409 Write permissions for workflows are disabled by the organization`. OIDC publishing needs `write`, so with the policy left alone the first release is a `startup_failure`.
+
+```bash
+gh api orgs/<org>/actions/permissions/workflow
+gh api -X PUT orgs/<org>/actions/permissions/workflow -f default_workflow_permissions=write
+```
+
+Changing an org-wide default is the owner's call, like the choice of org: ask, then change it. Do the change before Step 3 so the repo lands on `write` and Step 5 only has to confirm it.
 
 Transfer is effectively a one-way door for the humans involved: old URLs redirect, but coordinating a move back costs more than getting it right once.
 
@@ -110,7 +120,7 @@ Diff against Step 2. Two things are known to change:
 
 The two bold rows were observed across all five repos of the batch. The "survive" rows rest on the single proving repo plus, for secrets, GitHub's own documentation. Treat them as expected rather than guaranteed, and diff instead of trusting the table.
 
-OIDC needs `write`, so check it every time even when the org default is supposedly right:
+OIDC needs `write` (the org policy was settled in Step 1), so check it every time even when the org default is supposedly right:
 
 ```bash
 gh api repos/<org>/<r>/actions/permissions/workflow --jq .default_workflow_permissions

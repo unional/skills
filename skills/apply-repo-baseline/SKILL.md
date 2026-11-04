@@ -31,7 +31,7 @@ Not for: authoring CI workflow content (that lives in each owner's `.github` rep
 | About panel | repo, Pages only | § About panel | `PATCH /repos/{o}/{r}` |
 | Security | repo, public only | `assets/security-settings.json` | `PATCH /repos/{o}/{r}` |
 | Actions token | repo | `actions-permissions.json` / `-inherit.json`, by whether the release caller declares `permissions:` — see § 5 | `PUT /repos/{o}/{r}/actions/permissions/workflow` |
-| Org defaults | org | `assets/org-settings.json` | `PATCH /orgs/{org}` |
+| Org defaults | org | `assets/org-settings.json` (base permission only; security defaults are the next row) | `PATCH /orgs/{org}` |
 | Org code security default | org | § Org code security | `/orgs/{org}/code-security/configurations/{id}/defaults` |
 | Dependency automation | repo | `assets/renovate-preset.json` | files + `/repos/{o}/{r}/automated-security-fixes` |
 | Bypass and approval hardening | repo | § Hardening audit | rulesets + `/actions/permissions/workflow` |
@@ -58,7 +58,7 @@ The ruleset requires the context `code / all-checks`. That string is `<caller jo
 # .github/workflows/pull-request.yml
 jobs:
   code:                                    # ← job id supplies the first half
-    uses: <owner>/.github/.github/workflows/pnpm-verify-linux.yml@main
+    uses: <owner>/.github/.github/workflows/pnpm-verify-linux.yml@<ref>   # § Which ref
 ```
 
 where the reusable workflow ends with an `all-checks` job that fails if `verify` did not succeed.
@@ -79,7 +79,49 @@ A bare `CodeQL` required context is a version-naming mismatch, not a dead integr
 
 **Stop if the repo is on a legacy CI shape.** A single `nodejs.yml` calling `typescript-build.yml` / `typescript-test*.yml` / `npm-release.yml`, or hand-rolled steps, reports `build / …` and `test / …` and can never produce `code / all-checks`. Do not apply this baseline to such a repo — run **migrate-legacy-ci** first. It decides whether the repo should be archived, have its CI dropped, or be migrated, and most of them should not be migrated at all.
 
-Choose the reusable workflow by owner convention: `pnpm-verify-linux.yml` where it exists (unional), `pnpm-verify.yml` otherwise (clibuilder, cyberuni, repobuddy). Confirm the file exists in `<owner>/.github` before pointing at it.
+Choose the reusable workflow by owner convention: `pnpm-verify-linux.yml` where it exists (unional), `pnpm-verify.yml` otherwise (clibuilder, cyberuni, repobuddy). Confirm the file exists in `<owner>/.github` **at the ref you pin** before pointing at it.
+
+#### Which ref
+
+Pin a tag of `<owner>/.github`, never `@main`. On repobuddy, cyberuni and unional, `main` carries
+unreleased changes. A caller on it takes every change the moment it merges, breaking ones
+included. Each of those `.github` repos says which tag to pin in its README under **Which ref to
+pin**. Read that section
+rather than assuming, because the layout differs by owner (unional keeps its v2 line on a `v2.x`
+branch, tagged `v2`).
+
+The changesets release workflows decide the tag, because `changesets/action` and `@changesets/cli`
+are a strict pair. Read the repo's `@changesets/cli` major:
+
+| Repo's `@changesets/cli` | Pin | Why |
+|---|---|---|
+| v3 | `@v2` | the v2 line runs `changesets/action@v2`, which refuses CLI v2 |
+| v2 | upgrade the CLI to v3, then `@v2` | `@v1` installs `npm@latest`, and npm 12 breaks the publish; **setup-secretless-release** has the detail |
+
+Pin the same tag on every job in the repo (verify, publish gate, release) so they move together.
+List the tags with `gh api repos/<owner>/.github/tags --jq '.[].name'`, and confirm each workflow
+you call exists at that tag. The publish gate, for example, exists only on the v2 line of repobuddy
+and cyberuni. If an owner's `.github` has no tags at all, `@main` is the only ref; say so in the
+report instead of presenting it as a choice.
+
+#### Switching the required check from `all-checks` to `code / all-checks`
+
+Migrating a repo onto this shape renames its check. A workflow that ran its jobs inline reports
+`all-checks`; the reusable-workflow caller reports `code / all-checks`. The migration PR reports
+**only the new name**, so whichever context the ruleset requires, one side is blocked. This order
+worked on `repobuddy/buddy-agent-harness`:
+
+1. Open the migration PR.
+2. Wait for `code / all-checks` to go green **on that PR**. This is the § 2 "confirm from a real
+   run" check, done before the ruleset depends on the result.
+3. Switch the ruleset's required context to `code / all-checks` (§ 4 reconcile).
+4. Merge the migration PR, through the queue where there is one.
+5. Rebase every other open PR. Their last runs reported only `all-checks`, so they stay blocked
+   until they run again on the new workflow.
+
+Switching the ruleset before step 2 blocks every open PR on a check nothing produces yet, and if
+the migration PR then fails, `main` has nothing that can merge. Switching after step 4 does not
+work either: the migration PR cannot satisfy the old `all-checks` requirement, so it cannot merge.
 
 ### 3. Compose the desired ruleset
 
@@ -206,6 +248,35 @@ gh api -X PATCH "repos/$R" --input assets/security-settings.json   # public repo
 
 <!-- TODO: extract the read-diff-apply loop to a script; it is fully deterministic -->
 
+**If the diff renames the required context** (the ruleset requires `all-checks` and the desired one
+is `code / all-checks`), do not PUT it as part of the batch. Wait until the new context is green on
+the migration PR, as § 2 "Switching the required check" says.
+
+**Check for a `merge-backstop` ruleset before you reconcile.** repobuddy's **setup-github-repo**
+creates one: a separate ruleset over the default branch with its own merge queue (SQUASH,
+`max_entries_to_merge: 5`), its own required checks (often the old `all-checks`), and no bypass
+actors. Reconcile-by-name finds only `main`, so applying the baseline next to it stacks two queues
+with conflicting merge methods, and the union of both sets of required checks applies.
+
+```bash
+gh api "repos/$R/rulesets" --jq '.[] | "\(.id) \(.name)"'
+```
+
+If `merge-backstop` is there, fold it into `main` and then delete it, in this order:
+
+1. PUT `main` with the baseline queue rule (§ 3: MERGE, `max_entries_to_merge: 1`) and the
+   baseline required checks. The baseline's merge shape replaces the backstop's SQUASH.
+2. Read `main` back and confirm the queue and `code / all-checks` are present.
+3. `gh api -X DELETE "repos/$R/rulesets/<merge-backstop id>"`.
+
+Deleting first leaves the branch unprotected between the two calls. Doing it in this order means
+the branch always has at least one active queue.
+
+The backstop's empty `bypass_actors` was deliberate: it stops an agent holding an admin token from
+merging around the queue. `main` keeps `RepositoryRole: 5`, because a transfer that wipes bypass
+actors otherwise deadlocks the release (§ Hardening audit). Folding the backstop in therefore
+gives up that property. Do not decide it silently; report it to the owner as a decision.
+
 Two of those calls are refused by the agent harness's own classifier, for reasons that have nothing to do with GitHub:
 
 - **`PATCH repos/$R --input <file>` is refused when the payload disables squash and rebase.** Split it into explicit flags instead: `gh api -X PATCH "repos/$R" -F allow_squash_merge=false -F allow_rebase_merge=false -F allow_merge_commit=true …`. The values are still the ones in `assets/repo-settings.json`.
@@ -254,16 +325,25 @@ tightening the org later:
 
 ```yaml
   release:
-    uses: <owner>/.github/.github/workflows/pnpm-release-changeset-oidc.yml@main
-    needs: code
+    uses: <owner>/.github/.github/workflows/pnpm-release-changeset-oidc.yml@<ref>   # § Which ref
+    needs: [code, publish-gate]   # § Publish gate; plain `code` where the owner has no gate
     permissions:
       id-token: write
       contents: write
       pull-requests: write
+      actions: write # approves the Version Packages PR's parked runs
 ```
 
 Declaring `permissions:` drops every unlisted scope to `none` — which is why `contents` and
 `pull-requests` appear alongside `id-token`, not just the scope the callee obviously needs.
+
+`actions: write` is for the release workflow's approval step. The v2 line of
+`pnpm-release-changeset-oidc.yml` in repobuddy and cyberuni approves the Version PR's parked
+`pull_request` runs itself (§ The version PR with no checks), and it needs this scope to do that.
+That workflow declares no `permissions:` of its own, so the caller's grant passes straight through.
+Without `actions: write` the release still publishes, but it logs a warning and the PR's runs stay
+parked. Before adding the scope, read the callee's header at the pinned ref. unional's copy has no
+approval step, so leave the scope out there. Do not grant a scope that nothing uses.
 
 **Order matters.** Land the caller edit *before* the `PUT .../actions/permissions/workflow` that
 lowers the repo. Lowering first breaks the next release **silently** — `startup_failure`, zero jobs,
@@ -316,7 +396,7 @@ Converge a repo onto:
 
 | Item | Desired state | Action |
 |---|---|---|
-| `.github/renovate.json` | `{"extends": ["github>unional/renovate-preset"]}` | create if missing |
+| `.github/renovate.json` | `{"extends": ["github>unional/renovate-preset"]}` | create if missing; strip repo auto-merge rules only once the published preset carries them (below) |
 | Dependabot **alerts** | enabled | `PUT /repos/{o}/{r}/vulnerability-alerts` — Renovate reads these to raise fix PRs |
 | Dependabot **security updates** | disabled | `DELETE /repos/{o}/{r}/automated-security-fixes` |
 | `.github/dependabot.yml` | absent | delete (version updates move to Renovate) |
@@ -332,17 +412,36 @@ land the preset (with `platformAutomerge`) first, confirm one bot PR merges thro
 auto-merge, then remove Mergify and the automerge workflow.
 
 `assets/renovate-preset.json` is the canonical preset body. It lives here so the policy is
-reviewable with the rest of the baseline, but it is **published from `unional/renovate-preset`** —
-edit it here, then copy to that repo's `default.json`; repos extend the published preset, never
-this file. When they disagree, the published one is what actually runs.
+reviewable with the rest of the baseline, but it is **published from `unional/renovate-preset`**.
+Edit it here, then copy it to that repo's `default.json`. Repos extend the published preset, never
+this file. When the two disagree, the published one is what runs.
+
+**Strip a repo's own auto-merge rules only once the published preset carries them.** Some repos
+carry `platformAutomerge` and their own `automerge` `packageRules` in `renovate.json`
+(`repobuddy/buddy-agent-harness` does). They were added while the published preset had no
+auto-merge policy. For those repos, those lines are the only thing turning auto-merge on.
+Read the published preset first:
+
+```bash
+gh api repos/unional/renovate-preset/contents/default.json --jq .content | base64 -d
+```
+
+- It has `platformAutomerge: true` and the asset's `automerge` rules: reduce the repo's
+  `renovate.json` to the `extends` line. Keep a repo rule that is a deliberate exception rather
+  than a copy of the preset, for example one that turns auto-merge off for a single package.
+- It does not: leave the repo's rules in place and report that the preset is not yet published.
+  Do not publish to `unional/renovate-preset` from this skill. It changes the dependency policy of
+  every repo that extends it at once.
 
 Two couplings in that preset worth preserving:
 
 - `rebaseWhen: "behind-base-branch"` is what makes `strict_required_status_checks_policy: true`
   survive automerge. Without it every bot PR stalls waiting to be brought up to date.
-- `minimumReleaseAge` is the supply-chain soak, mirroring `minimumreleaseage=1440` in `.npmrc`.
-  `vulnerabilityAlerts` shortens it to 1 day rather than zero — a malicious "fix" release is
-  exactly the thing an instant security merge would swallow.
+- `minimumReleaseAge: "3 days"` is the supply-chain soak. It is longer than the one day
+  `minimumreleaseage=1440` sets in `.npmrc`: pnpm refuses a version younger than a day at install
+  time, and Renovate waits three days before it even proposes one. `vulnerabilityAlerts` shortens
+  the soak to 1 day rather than zero — a malicious "fix" release is exactly the thing an instant
+  security merge would swallow.
 
 ### 7. Verify and report
 
@@ -452,9 +551,23 @@ That is Mergify (account-level as often as repo-level), `dependabot-automerge.ym
 
 ## Org code security — do this once per org, before any repo work
 
-`assets/org-settings.json` covers Dependabot and secret scanning for new repos, but **not code
-scanning**. That one lives in a *code security configuration*, and without it every repo created in
-the org starts with no code scanning at all — silently, and forever, because nothing later notices.
+`assets/org-settings.json` now carries only `default_repository_permission`. **Every security
+default for new repos lives in a *code security configuration*.** That covers Dependabot alerts,
+secret scanning, push protection and code scanning. Without a default configuration, every repo
+created in the org starts with none of them. It happens silently, and nothing later notices.
+
+Do not read or write the org's `*_enabled_for_new_repositories` fields. GitHub deprecated them in
+favour of code security configurations and removed them from the get-organization and
+update-organization endpoints on 2026-04-21. Updates through them had been ignored since
+configurations went GA in July 2024. A `GET /orgs/{org}` that still returns them reports `false`
+whatever the real default is. `repobuddy` returned `false` for all of them while "GitHub
+recommended" was its default for new repos. Read the defaults endpoint below instead. Sources:
+[changelog 2026-04-21](https://github.blog/changelog/2026-04-21-deprecation-of-security-related-organization-api-fields),
+[changelog 2024-07-09](https://github.blog/changelog/2024-07-09-sunsetting-security-settings-defaults-parameters-in-the-organizations-rest-api/),
+[REST: update an organization](https://docs.github.com/en/rest/orgs/orgs#update-an-organization).
+
+"GitHub recommended" leaves `dependabot_security_updates` as `not_set`, which matches § 6: Renovate
+raises the fix PRs, not Dependabot.
 
 There are **many orgs** (cyberuni, repobuddy, justland, clibuilder, mocktomata,
 type-plus, standard-log, …). Sweep them rather than fixing one at a time:
@@ -552,28 +665,62 @@ Two rules for overrides:
 
 Verify by re-reading the alerts, not by the install succeeding — the four closed on merge.
 
-## Publish gate — the release PR is the last reviewable point
+## Publish gate — a `needs:` of the release job
 
-Repos releasing with changesets should call the gate from `pull-request.yml`:
+Repos releasing with changesets call the gate from `release.yml`, as a job the release job needs:
 
 ```yaml
   publish-gate:
-    if: startsWith(github.head_ref, 'changeset-release/')
-    uses: cyberuni/.github/.github/workflows/pnpm-publish-gate.yml@main
+    uses: <owner>/.github/.github/workflows/pnpm-publish-gate.yml@<ref>   # § Which ref
     permissions:
       contents: read
+
+  release:
+    uses: <owner>/.github/.github/workflows/pnpm-release-changeset-oidc.yml@<ref>
+    needs: [code, publish-gate]
+    # permissions: as in § 5
 ```
 
 It diffs the tarball contents and runtime `dependencies` against the published version, **blocking**
 files that must never ship (tests, key material, `.env`, repo metadata) and new runtime deps, while
-**reporting without failing** on ordinary churn. Do not add it to the required contexts — it is
-skipped on every non-release PR, and a skipped check never satisfies a required one.
+**reporting without failing** on ordinary churn.
+
+**Do not put it in `pull-request.yml` on `changeset-release/` branches.** That was the earlier
+advice here, and that placement never fires. The gate workflow's own header says so (repobuddy and
+cyberuni `pnpm-publish-gate.yml`). A job gated on the Version PR runs only if that PR gets
+`pull_request` runs, and with the plain `GITHUB_TOKEN` those runs are parked or never created
+(§ The version PR with no checks). The gate packs the working tree itself, so it needs no PR
+context. As a `needs:` of release it runs on `main` right before `changeset publish`. It also runs
+on pushes that only open or update the Version PR. That is deliberate: it fails closed, and a bad
+tarball shows up one merge earlier.
+
+A failed gate shows up on the release run, not on any PR. `code / all-checks` does not include it,
+and neither should the ruleset's required contexts.
+
+The gate exists on the v2 line of `repobuddy/.github` and `cyberuni/.github`. `unional/.github` has
+none. A unional-owned repo has no gate to call: drop `publish-gate` from `needs:` and report the gap
+rather than reaching into another owner's `.github`.
+
+**Run the gate locally before switching a release onto it.** A first run against a years-old
+published version often blocks on something that is not a defect. **setup-secretless-release**
+lists the usual two. Finding that out locally is cheaper than on a release run:
+
+```bash
+gate=$(mktemp -d)
+git clone --depth 1 --branch <ref> https://github.com/<owner>/.github.git "$gate"
+pnpm install && pnpm build          # in the repo: the gate packs the built tree
+node "$gate/.github/scripts/publish-gate-cli.mjs"   # run from the repo root
+```
+
+It writes `publish-gate-report.md` in the repo root, so delete it before you commit. It exits
+non-zero on a block.
 
 **This is the argument for changesets over semantic-release, and it is a security argument, not a
-preference.** semantic-release publishes straight off a push to the default branch, so there is no
-point between "merged" and "on npm" where anything can be inspected — there is nowhere to put this
-gate. changesets splits it: a push only opens the Version Packages PR, and nothing publishes until
-that PR merges. **changesets is the standard, not the preferred option of two** — migrate every
+preference.** semantic-release publishes straight off a push to the default branch. Nothing sits
+between "merged" and "on npm" where a person can look, so a gate there is the last and only line.
+changesets splits it: a push only opens the Version Packages PR, and nothing publishes until that
+PR merges. The gate runs on that first push, so a block shows up while there is still a PR to fix
+it on and nothing has been published. **changesets is the standard, not the preferred option of two** — migrate every
 semantic-release repo rather than choosing per repo (worked example: cyberuni/color-map#212).
 The same applies to the package manager: pnpm, with bun kept where a repo already uses it.
 **setup-secretless-release** owns both migrations.
@@ -588,8 +735,8 @@ Setup mode only — the per-repo files the baseline assumes. Owner-level content
 
 | File | Content |
 |---|---|
-| `.github/workflows/pull-request.yml` | job `code` → `<owner>/.github/.github/workflows/pnpm-verify*.yml@main`; add `merge_group:` to `on:` before adding a merge queue rule (§ 3) — the queue's branch fires neither `pull_request` nor `push` |
-| `.github/workflows/release.yml` | job `code` (same reusable) + job `release` → `pnpm-release-changeset*.yml@main`, `needs: code`, job `permissions: id-token/contents/pull-requests: write` |
+| `.github/workflows/pull-request.yml` | job `code` → `<owner>/.github/.github/workflows/pnpm-verify*.yml@<ref>` (§ Which ref); add `merge_group:` to `on:` before adding a merge queue rule (§ 3) — the queue's branch fires neither `pull_request` nor `push` |
+| `.github/workflows/release.yml` | job `code` (same reusable) + job `publish-gate` → `pnpm-publish-gate.yml@<ref>`, `permissions: contents: read` (§ Publish gate) + job `release` → `pnpm-release-changeset*.yml@<ref>`, `needs: [code, publish-gate]`, job `permissions: id-token/contents/pull-requests/actions: write` (`actions` only where the callee approves parked runs, § 5). Owners without a gate: `needs: code` |
 | `.github/workflows/codeql-analysis.yml` | copy of the owner's version; required for the code-scanning rule |
 | `.github/renovate.json` | `{"extends": ["github>unional/renovate-preset"]}` — the only dependency-automation file; see § 6 |
 | `.node-version`, `.npmrc` | pinned Node; `minimumreleaseage=1440` guards against fresh-publish supply-chain attacks |
@@ -603,9 +750,9 @@ Prefer **OIDC/trusted publishing** for release (`pnpm-release-changeset-oidc.yml
 ## The version PR with no checks
 
 On a **newly created or newly transferred** repo, the changesets "Version Packages" PR can appear to
-have no status checks, and so cannot satisfy the required `code / all-checks` context. Which of two
-causes you have is decided by how the release workflow opens the PR. Read the runs before concluding
-anything, because held runs and no runs at all look identical on the PR:
+have no status checks, and so cannot satisfy the required `code / all-checks` context. The usual
+cause is runs that exist but are held for approval. The rarer one is no runs at all. Read the runs
+before concluding anything, because held runs and no runs look identical on the PR:
 
 ```bash
 gh run list --repo "$R" --event pull_request --json databaseId,headBranch,status,conclusion \
@@ -627,11 +774,20 @@ gh api "repos/$R/actions/runs/<id>" --jq '{event, conclusion, actor: .actor.logi
   kept landing in `action_required` after several approvals and several merged version PRs. Treat
   approving the release PR's runs as a recurring step, not a one-off.
 
-- **Opened with the plain `GITHUB_TOKEN`: no runs, and nothing to approve.** GitHub suppresses
-  workflow triggers from that token, so the PR is genuinely checkless until a real user's push starts
-  the checks (an empty commit to `changeset-release/main`; **ship-it** step 3) or the release
-  migrates to a GitHub App token. Under a required-check ruleset the alternative is an admin
-  override, which is another reason the bypass actor that a transfer wipes is load-bearing.
+- **Opened with the plain `GITHUB_TOKEN`: the runs exist and are held too.** This bullet used to
+  say that token creates no runs. That is wrong for the PR's `pull_request` runs: on
+  `repobuddy/buddy-agent-harness` (PR #264), changesets/action opened the Version PR with the
+  plain `GITHUB_TOKEN`, and its `pull_request` runs were created and parked as `action_required`.
+  The v2 line of `pnpm-release-changeset-oidc.yml` in repobuddy and cyberuni now approves those
+  parked runs itself, right after it opens or updates the PR. It needs the caller to grant
+  `actions: write` (§ 5). If the runs are still parked, check three things. Does the caller grant
+  the scope? Does the callee at the pinned ref have the approval step (unional's does not)? Does
+  the release run log a warning from that step? Then approve by hand as above.
+
+  If `gh run list` shows **no** `pull_request` run for the branch at all, the PR really has no
+  checks. A real user's push starts them (an empty commit to `changeset-release/main`; **ship-it**
+  step 3). Under a required-check ruleset the other way through is an admin override, which is
+  another reason the bypass actor that a transfer wipes is load-bearing.
 
 A merge queue can merge the version PR once its checks have reported (`cyberuni/search-packages`
 merged it through the queue with no admin bypass). It does not remove the block on a checkless PR.
@@ -695,6 +851,12 @@ Three dead ends:
 - Do not count squash and rebase being disabled as protection against an auto-merge armer. It is a side effect of the merge shape and it disappears the day someone re-enables them.
 - Do not retry a call the harness refuses in a different encoding. Two rewrites are settled (§ 4); anything else, stop and report.
 - Do not touch archived repos.
+- Do not pin `<owner>/.github` workflows at `@main`. Pin the tag the owner's README names for the repo's `@changesets/cli` major (§ Which ref).
+- Do not switch the required context to `code / all-checks` before it has gone green on the migration PR, and do not try to merge that PR while the ruleset still requires `all-checks` (§ 2).
+- Do not reconcile `main` next to a `merge-backstop` ruleset. Fold it in: PUT `main` first, then delete `merge-backstop` (§ 4).
+- Do not call the publish gate from `pull-request.yml` on `changeset-release/` branches. It never fires there. Make it a `needs:` of the release job.
+- Do not strip a repo's own Renovate auto-merge rules before confirming the published `unional/renovate-preset` carries `platformAutomerge` and the auto-merge rules. Stripping them early turns auto-merge off.
+- Do not read or write the org `*_enabled_for_new_repositories` fields. GitHub removed them; code security configurations replace them.
 
 ## References
 

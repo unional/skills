@@ -85,8 +85,14 @@ reports "a workflow file issue" and points at nothing.
 is not purchasable at the current plan, so protection is applied per repo.
 
 `cyberuni` org defaults, representative of the others: `default_repository_permission: read`
-(good), every new-repo security default **false**. `assets/org-settings.json` flips the four
-new-repo security toggles on; that is an uplift over current state, not a description of it.
+(good), every new-repo security default **false**. `assets/org-settings.json` used to flip the four
+new-repo security toggles on.
+
+Superseded (2026-11-04): those `false` values were never the real defaults. GitHub stopped
+honouring the `*_enabled_for_new_repositories` fields when code security configurations went GA
+(July 2024), and removed them on 2026-04-21. `repobuddy` reported all of them `false` while
+"GitHub recommended" was its default for new repos. The asset now carries only
+`default_repository_permission`. SKILL.md § Org code security has the sources.
 
 ## CI shape, converged
 

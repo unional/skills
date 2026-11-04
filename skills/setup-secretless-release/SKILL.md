@@ -265,9 +265,9 @@ The caller grants permissions; the callee cannot exceed them.
       actions: write # approves the Version Packages PR's parked runs
 ```
 
-`actions: write` is for the approval step in the v2 line of repobuddy's and cyberuni's
-`pnpm-release-changeset-oidc.yml` (Step 6). unional's copy has no such step, so leave the scope out
-there. **apply-repo-baseline** § 5 has the detail, and its § Publish gate has the `publish-gate`
+`actions: write` is for the approval step in the v2 line of `pnpm-release-changeset-oidc.yml`
+(Step 6). repobuddy's, cyberuni's and unional's copies all have it, so every owner's caller grants
+the scope. **apply-repo-baseline** § 5 has the detail, and its § Publish gate has the `publish-gate`
 job.
 
 Declare the block even where the repo default is already `write`. It is least privilege, it works
@@ -379,13 +379,12 @@ What differs is who approves them:
 | Release workflow | How the PR is opened | Who approves the parked runs |
 | --- | --- | --- |
 | `pnpm-release-changeset.yml` — token variant | the `CI_GITHUB_TOKEN` **PAT** | you, by hand |
-| `pnpm-release-changeset-oidc.yml` — secretless, repobuddy and cyberuni v2 | the built-in **`GITHUB_TOKEN`** | the workflow itself, given `actions: write` (Step 4) |
-| `pnpm-release-changeset-oidc.yml` — secretless, unional | the built-in **`GITHUB_TOKEN`** | you, by hand |
+| `pnpm-release-changeset-oidc.yml` — secretless, v2 line (repobuddy, cyberuni, unional) | the built-in **`GITHUB_TOKEN`** | the workflow itself, given `actions: write` (Step 4) |
 
-This skill used to say a PR opened with `GITHUB_TOKEN` gets no runs at all, and unional's copy of
-the workflow still says so in its header. On `repobuddy/buddy-agent-harness` (PR #264) the runs were
-created and parked. Read
-the runs before concluding anything, and approve what is held:
+This skill used to say a PR opened with `GITHUB_TOKEN` gets no runs at all. On
+`repobuddy/buddy-agent-harness` (PR #264) the runs were created and parked, and after approval they
+ran full jobs and passed. Read the runs before concluding anything, and approve what is held, newest
+first (**ship-it** step 3):
 
 ```bash
 gh run list --repo <o>/<r> --status action_required

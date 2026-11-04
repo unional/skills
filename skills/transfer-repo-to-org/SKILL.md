@@ -123,9 +123,9 @@ A `read` default produces `startup_failure` with zero jobs and no logs on the ne
 
 Every ruleset came back from the batch with `bypass_actors: []`. All five. The rules themselves were intact, nothing in the UI flagged the list as changed, and no check started failing, so the repo read as healthy.
 
-It bricks at the first release instead. A secretless Version PR is opened with the built-in `GITHUB_TOKEN`, which fires no `pull_request` workflows, so it carries **zero checks**. `code / all-checks` is required. With the bypass list empty there is nobody left who can merge it: an org owner pressing the button gets `Repository rule violations found`. Re-running CI cannot help, because there is no CI to re-run. The release sits there until someone restores the actor. Why the secretless Version PR carries no checks, and why a merge queue or a same-named commit status does not rescue it, belongs to **setup-secretless-release**.
+It bricks at the first release whose Version PR cannot report its checks. GitHub creates the Version PR's `pull_request` runs and holds them as `action_required` until they are approved, and the move re-arms that hold (Step 9). `code / all-checks` is required, so the PR merges only once its held runs are approved and pass. When that cannot happen (the release workflow's approval step lacks `actions: write`, nobody approves by hand, or no run was created at all), an admin override is the only way through. With the bypass list empty there is nobody left who can give one: an org owner pressing the button gets `Repository rule violations found`. The release sits there until someone restores the actor or gets the runs approved. Who approves the held runs on each release workflow, and why a merge queue or a same-named commit status does not rescue a PR with no checks, belong to **setup-secretless-release** Step 6.
 
-A repo still releasing through the PAT variant gets checks on its Version PR and so survives the empty list. That is a reprieve, not an exemption: the OIDC migration is what removes the checks, and the two changes usually land in the same sitting.
+Neither release workflow is exempt. The PAT variant and the secretless one both open a Version PR whose runs are held, so restore the actor whichever one the repo calls.
 
 Restore it in the same sitting as the transfer, by replaying what Step 2 captured:
 
@@ -157,14 +157,14 @@ Order matters and reversing it strands every PR: land the `merge_group` trigger 
 
 ## Step 9 — First release after the transfer
 
-Expect the version PR's runs to sit in `action_required` if the repo opens it with a PAT. In the new location `github-actions[bot]` has no merged commit, so the `first_time_contributors` policy holds its runs, the same hold a fresh repo has, re-armed by the move. (A repo on the secretless workflow has no runs to approve; see **ship-it**.)
+Expect the version PR's runs to sit in `action_required` on either release workflow. On the PAT variant the cause is the `first_time_contributors` policy: in the new location `github-actions[bot]` has no merged commit, so its runs are held, the same hold a fresh repo has, re-armed by the move. The secretless workflow approves its own Version PR's held runs when the caller grants `actions: write` (**setup-secretless-release** Step 6). Where it does not, or its approval step logged a warning, approve them by hand, newest first:
 
 ```bash
 gh run list --repo <org>/<r> --status action_required
 gh api -X POST repos/<org>/<r>/actions/runs/<id>/approve
 ```
 
-Approve the held runs. Then confirm the publish actually happened — a green run is not proof:
+**ship-it** steps 2 and 3 have the full procedure, including which runs to skip. Then confirm the publish actually happened — a green run is not proof:
 
 ```bash
 curl -s -H "Accept: application/vnd.npm.install-v1+json" https://registry.npmjs.org/<package> \
@@ -178,7 +178,7 @@ curl -s https://registry.npmjs.org/<package>/<version> | jq .dist.attestations
 - Do not register trusted publishing before a transfer you already know is coming.
 - Do not choose the target org for the user, or infer it from where their other repos live.
 - Do not assume `default_workflow_permissions` survived; it takes the org default.
-- Do not read "the rulesets are still there" as "the rulesets are intact". The bypass actors are gone, and a checkless Version PR then has no way to merge.
+- Do not read "the rulesets are still there" as "the rulesets are intact". The bypass actors are gone, and a Version PR whose checks never report then has no way to merge.
 - Do not register a trusted publisher for the new owner before the repo is under it. `E404 PUT` is the sequencing error, not an auth fault.
 - Do not rely on the URL redirect for `package.json` metadata — provenance records what the file says.
 - Do not add a `merge_queue` rule before the `merge_group` trigger is on the default branch.

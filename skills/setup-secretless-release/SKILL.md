@@ -38,9 +38,11 @@ The difference decides whether a publish can be inspected at all.
 - **semantic-release publishes straight off a push to the default branch.** Nothing sits between
   "merged" and "on npm". There is no artifact to review and nowhere to attach a check.
 - **changesets splits the release in two.** A push only opens or updates the Version Packages PR;
-  nothing publishes until that PR merges. That PR is the only reviewable view of the next release,
-  and it is where **pnpm-publish-gate** diffs the tarball contents and runtime dependencies against
-  the published version.
+  nothing publishes until that PR merges. **pnpm-publish-gate** diffs the tarball contents and
+  runtime dependencies against the published version. It runs as a `needs:` of the release job in
+  `release.yml`, not on the Version PR, so it fires on the push that opens the PR and blocks before
+  anything publishes. **apply-repo-baseline** § Publish gate owns the placement and the caller
+  shape.
 
 Every semantic-release repo that comes through this skill gets migrated (worked example:
 cyberuni/color-map#212):
@@ -215,8 +217,10 @@ Two of its behaviours surprise people, and both block on something that is not a
   package changesets would never publish. Add `private: true` to that manifest.
 - **It diffs runtime dependencies against the published `latest`, which may be years stale.**
   `@unional/create-monorepo@0.1.0` (2019) declared its whole toolchain under `dependencies`, so local
-  `0.2.2`'s six real dependencies read as four new ones. There is no per-package allowlist, so the
-  judgement is yours: compare against what the package needs now, not against 2019.
+  `0.2.2`'s six real dependencies read as four new ones. Compare against what the package needs now,
+  not against 2019. cyberuni's gate has no allowlist, so the judgement is yours and goes in the PR.
+  repobuddy's v2 gate accepts an acknowledgement per dependency, with a written reason, in the
+  repo's `.github/publish-gate.json` (repobuddy/.github README, § Publish gate).
 
 ## Step 4 — Point the release at a secretless workflow
 
@@ -252,13 +256,19 @@ The caller grants permissions; the callee cannot exceed them.
 
 ```yaml
   release:
-    uses: <owner>/.github/.github/workflows/pnpm-release-changeset-oidc.yml@main
-    needs: code
+    uses: <owner>/.github/.github/workflows/pnpm-release-changeset-oidc.yml@<ref>   # below
+    needs: [code, publish-gate]   # plain `code` where the owner has no gate
     permissions:
       id-token: write
       contents: write
       pull-requests: write
+      actions: write # approves the Version Packages PR's parked runs
 ```
+
+`actions: write` is for the approval step in the v2 line of repobuddy's and cyberuni's
+`pnpm-release-changeset-oidc.yml` (Step 6). unional's copy has no such step, so leave the scope out
+there. **apply-repo-baseline** § 5 has the detail, and its § Publish gate has the `publish-gate`
+job.
 
 Declare the block even where the repo default is already `write`. It is least privilege, it works
 under either default, and it is what allows the default to be lowered to `read` afterwards — which
@@ -279,9 +289,13 @@ Add the secretless workflow **alongside** the token-based one in the `.github` r
 
 ### Which ref the caller pins, and why `@v1` is now a hazard
 
-The ref is not cosmetic. `@v1` of the changeset release workflows runs `npm install -g npm@latest`;
-only `@v2` and `@main` pin `npm@11`. npm 12 wraps `npm info --json` in
-an array (changesets/changesets#2164), which breaks publishing under **both** changesets CLI majors:
+Pin a tag of `<owner>/.github`, never `@main`. The tag depends on the owner and on the repo's
+`@changesets/cli` major; **apply-repo-baseline** § Which ref owns the rule (repobuddy and cyberuni
+pin `@v2` for CLI v3). This section covers why `@v1` is not one of the choices.
+
+`@v1` of the changeset release workflows runs `npm install -g npm@latest`. npm 12 wraps
+`npm info --json` in an array (changesets/changesets#2164), which breaks publishing under **both**
+changesets CLI majors:
 
 | changesets CLI | What npm 12 does to it |
 | --- | --- |
@@ -290,18 +304,21 @@ an array (changesets/changesets#2164), which breaks publishing under **both** ch
 
 Three repos were exposed on `@v1` under one major or the other. Move them off it.
 
-Between the remaining two, `@main` lands every upstream change in every repo at once; that is how one
-`pnpm-verify` playwright bug reached five repos in a day. A moving major tag (`@v2`) is the middle
-ground. Advancing that tag for a bugfix is normal, but read the interface diff before you point
-repos at it:
+Do not assume `@v2` pins npm either. As of 2026-11-04, cyberuni's v2 installs `npm@11`, while
+repobuddy's v2 and unional's copy install `npm@latest`. Read the `npm install -g` step at the ref
+you pin.
+
+`@main` is out because it lands every upstream change in every repo at once; that is how one
+`pnpm-verify` playwright bug reached five repos in a day. A moving major tag (`@v2`) still moves.
+Advancing it for a bugfix is normal, but read the interface diff before you point repos at it:
 
 ```bash
 gh api repos/<owner>/.github/compare/v2...main
 ```
 
-**Pinning the caller does not pin what the workflow calls.** `pnpm-verify.yml` references
-`setup-playwright@main` internally, so that composite still floats however tightly every caller is
-pinned. Treat a pinned caller as reducing the blast radius, not removing it.
+**Pinning the caller does not pin what the workflow calls.** cyberuni's `pnpm-verify.yml` at `v2`
+references `setup-playwright@main` internally, so that composite still floats however tightly every
+caller is pinned. Treat a pinned caller as reducing the blast radius, not removing it.
 
 ### The changesets action and CLI versions are a matched pair
 
@@ -353,35 +370,38 @@ Registering trust is additive: token publishing keeps working until explicitly d
 
 **semantic-release publishes straight from the default branch with no version PR.** Everything below, plus Step 7's ruleset concerns, is changesets-specific — skip it. What a semantic-release repo gets instead is one hazard of its own: the first release on a **maintenance** branch (`1.32.x`) fails `E401` on `npm dist-tag add`, because trusted publishers are not yet allowed to set dist-tags (semantic-release/npm#1023, npm/cli#8547 — both open). A re-run succeeds. Default-branch releases are unaffected, so do not treat this as a failed migration.
 
-### The Version PR looks checkless either way, for two different reasons
+### The Version PR's runs are parked on both workflows
 
-The "Version Packages" PR reports nothing on both sides of this migration, and the two causes need
-different responses. **Which one you have is decided by the workflow the repo now calls**, so read
-that first rather than the symptom:
+The "Version Packages" PR can look checkless on both sides of this migration. On both, the usual
+cause is the same: GitHub creates the PR's `pull_request` runs and parks them as `action_required`.
+What differs is who approves them:
 
-| Release workflow | How the PR is opened | What reports |
+| Release workflow | How the PR is opened | Who approves the parked runs |
 | --- | --- | --- |
-| `pnpm-release-changeset.yml` — token variant | `checkout` `token:` and `github-token:` are the `CI_GITHUB_TOKEN` **PAT** | runs fire, then wait in `action_required` |
-| `pnpm-release-changeset-oidc.yml` — secretless | the built-in **`GITHUB_TOKEN`** | **nothing at all** |
+| `pnpm-release-changeset.yml` — token variant | the `CI_GITHUB_TOKEN` **PAT** | you, by hand |
+| `pnpm-release-changeset-oidc.yml` — secretless, repobuddy and cyberuni v2 | the built-in **`GITHUB_TOKEN`** | the workflow itself, given `actions: write` (Step 4) |
+| `pnpm-release-changeset-oidc.yml` — secretless, unional | the built-in **`GITHUB_TOKEN`** | you, by hand |
 
-**On the token variant the PR's runs need approval.** They do fire, but the `first_time_contributors`
-policy holds them in `action_required` until `github-actions[bot]` has a merged commit in the repo.
-Approving moves them to `queued`. The policy is meant to clear after that merge but has not done so
-reliably, so check for held runs on every release rather than assuming they are gone:
+This skill used to say a PR opened with `GITHUB_TOKEN` gets no runs at all, and unional's copy of
+the workflow still says so in its header. On `repobuddy/buddy-agent-harness` (PR #264) the runs were
+created and parked. Read
+the runs before concluding anything, and approve what is held:
 
 ```bash
 gh run list --repo <o>/<r> --status action_required
 gh api -X POST repos/<o>/<r>/actions/runs/<id>/approve
 ```
 
-**On the secretless workflow that remedy does not apply.** A PR opened with `GITHUB_TOKEN` does not
-trigger `on: pull_request` workflows at all; the `-oidc` workflow says so in its own header comment.
-A run may be recorded for it as `action_required` with zero jobs, and approving that run produces
-nothing. So under a required-check ruleset the Version PR is `BLOCKED` until a real user's push
-starts the checks: push an empty commit to `changeset-release/main` (**ship-it** step 3 has the
-commands). The changesets action force-pushes over it on its next run, so it costs nothing. Admin
-override also merges it, but skips the verification, so prefer the empty commit. Budget for one
-of these per release as a standing cost of the migration rather than a fault to diagnose.
+The `first_time_contributors` policy holds the runs until `github-actions[bot]` has a merged commit
+in the repo. It is meant to clear after that merge but has not done so reliably, so check on every
+release. Where the workflow approves the runs and they are still parked, check that the caller
+grants `actions: write` and whether the release run logged a warning from the approval step.
+
+If there is **no** `pull_request` run for `changeset-release/main` at all, the PR really has no
+checks. A real user's push starts them: push an empty commit to `changeset-release/main`
+(**ship-it** step 3 has the commands). The changesets action force-pushes over it on its next run,
+so it costs nothing. Admin override also merges it, but skips the verification, so prefer the empty
+commit. **apply-repo-baseline** § The version PR with no checks has the diagnosis commands.
 
 Three exits look open and are not. Do not spend a session re-deriving them:
 
@@ -426,10 +446,13 @@ Each is `gh-readonly-queue/main/pr-<N>-<base-sha>`. The second PR's base SHA sho
 
 ## What NOT to do
 
-- Do not fabricate a required check with a no-op workflow to get a checkless PR through. On the token
-  variant, approve the runs (Step 6). On the secretless one, override as admin and say so.
-- Do not hunt for an `action_required` run on a secretless Version PR. `GITHUB_TOKEN` opened it, so no
-  run was ever created.
+- Do not fabricate a required check with a no-op workflow to get a checkless PR through. Approve the
+  parked runs (Step 6). Only where no run exists, push an empty commit or override as admin and say so.
+- Do not assume a secretless Version PR has no runs. `GITHUB_TOKEN` runs are created and parked as
+  `action_required`; list them before reaching for an empty commit.
+- Do not call the publish gate from `pull-request.yml` on `changeset-release/` branches. It never fires
+  there; make it a `needs:` of the release job (**apply-repo-baseline** § Publish gate).
+- Do not pin `<owner>/.github` at `@main` (**apply-repo-baseline** § Which ref).
 - Do not try an `on: push` workflow watching `changeset-release/**`. `GITHUB_TOKEN` genuinely does suppress `push` events, so it cannot fire.
 - Do not treat trusted publishing as per repo, or point `--file` at the reusable workflow.
 - Do not install semantic-release unpinned in a secretless workflow. An old core resolves an old `@semantic-release/npm` that predates trusted publishing, and the OIDC path is skipped silently.

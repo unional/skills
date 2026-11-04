@@ -396,7 +396,7 @@ Converge a repo onto:
 
 | Item | Desired state | Action |
 |---|---|---|
-| `.github/renovate.json` | extends `github>unional/renovate-preset`, and keeps its own auto-merge rules while the published preset has none (below) | create if missing |
+| `.github/renovate.json` | `{"extends": ["github>unional/renovate-preset"]}` | create if missing; strip repo auto-merge rules only once the published preset carries them (below) |
 | Dependabot **alerts** | enabled | `PUT /repos/{o}/{r}/vulnerability-alerts` — Renovate reads these to raise fix PRs |
 | Dependabot **security updates** | disabled | `DELETE /repos/{o}/{r}/automated-security-fixes` |
 | `.github/dependabot.yml` | absent | delete (version updates move to Renovate) |
@@ -411,44 +411,37 @@ Do not delete Mergify config while its rules are the only thing merging bot PRs.
 land the preset (with `platformAutomerge`) first, confirm one bot PR merges through GitHub
 auto-merge, then remove Mergify and the automerge workflow.
 
-`assets/renovate-preset.json` is the intended preset body. It lives here so the policy is
-reviewable with the rest of the baseline, and it is meant to be **published from
-`unional/renovate-preset`** as that repo's `default.json`. Repos extend the published preset, never
+`assets/renovate-preset.json` is the canonical preset body. It lives here so the policy is
+reviewable with the rest of the baseline, but it is **published from `unional/renovate-preset`**.
+Edit it here, then copy it to that repo's `default.json`. Repos extend the published preset, never
 this file. When the two disagree, the published one is what runs.
 
-**They disagree today, and the gap is the auto-merge policy.** Read the published preset before
-touching any repo's `renovate.json`:
+**Strip a repo's own auto-merge rules only once the published preset carries them.** Some repos
+carry `platformAutomerge` and their own `automerge` `packageRules` in `renovate.json`
+(`repobuddy/buddy-agent-harness` does). They were added while the published preset had no
+auto-merge policy. For those repos, those lines are the only thing turning auto-merge on.
+Read the published preset first:
 
 ```bash
 gh api repos/unional/renovate-preset/contents/default.json --jq .content | base64 -d
 ```
 
-As of 2026-11-04 it extends `config:base` and `:preserveSemverRanges` and sets
-`minimumReleaseAge: "1 day"` and `rebaseWhen: "behind-base-branch"`. It has no
-`platformAutomerge` and no `automerge` rules. The asset has both, and extends `config:recommended`
-with a `3 days` soak. A repo whose `renovate.json` carries `platformAutomerge` and its own
-`packageRules` (`repobuddy/buddy-agent-harness` does) is getting auto-merge from those lines alone.
-Cutting it down to a bare `{"extends": [...]}` turns auto-merge off.
-
-So, until the published preset carries the asset's auto-merge policy:
-
-- **Leave a repo's auto-merge rules in place.** Do not reduce `renovate.json` to the bare `extends`
-  line. A new repo gets the `extends` line plus the asset's `platformAutomerge` and `packageRules`.
-- **Report the drift as a decision for the owner, every run.** Options: publish the asset to
-  `unional/renovate-preset` (then strip the per-repo copies), or change the asset to match what is
-  published. Do not publish to `unional/renovate-preset` yourself. It changes the dependency policy
-  of every repo that extends it at once.
-- **Do not remove Mergify or `dependabot-automerge.yml` on the strength of the preset.** The order
-  above needs a working GitHub auto-merge path first. Under the published preset, that path exists
-  only where the repo carries its own rules.
+- It has `platformAutomerge: true` and the asset's `automerge` rules: reduce the repo's
+  `renovate.json` to the `extends` line. Keep a repo rule that is a deliberate exception rather
+  than a copy of the preset, for example one that turns auto-merge off for a single package.
+- It does not: leave the repo's rules in place and report that the preset is not yet published.
+  Do not publish to `unional/renovate-preset` from this skill. It changes the dependency policy of
+  every repo that extends it at once.
 
 Two couplings in that preset worth preserving:
 
 - `rebaseWhen: "behind-base-branch"` is what makes `strict_required_status_checks_policy: true`
   survive automerge. Without it every bot PR stalls waiting to be brought up to date.
-- `minimumReleaseAge` is the supply-chain soak, mirroring `minimumreleaseage=1440` in `.npmrc`.
-  `vulnerabilityAlerts` shortens it to 1 day rather than zero — a malicious "fix" release is
-  exactly the thing an instant security merge would swallow.
+- `minimumReleaseAge: "3 days"` is the supply-chain soak. It is longer than the one day
+  `minimumreleaseage=1440` sets in `.npmrc`: pnpm refuses a version younger than a day at install
+  time, and Renovate waits three days before it even proposes one. `vulnerabilityAlerts` shortens
+  the soak to 1 day rather than zero — a malicious "fix" release is exactly the thing an instant
+  security merge would swallow.
 
 ### 7. Verify and report
 
@@ -745,7 +738,7 @@ Setup mode only — the per-repo files the baseline assumes. Owner-level content
 | `.github/workflows/pull-request.yml` | job `code` → `<owner>/.github/.github/workflows/pnpm-verify*.yml@<ref>` (§ Which ref); add `merge_group:` to `on:` before adding a merge queue rule (§ 3) — the queue's branch fires neither `pull_request` nor `push` |
 | `.github/workflows/release.yml` | job `code` (same reusable) + job `publish-gate` → `pnpm-publish-gate.yml@<ref>`, `permissions: contents: read` (§ Publish gate) + job `release` → `pnpm-release-changeset*.yml@<ref>`, `needs: [code, publish-gate]`, job `permissions: id-token/contents/pull-requests/actions: write` (`actions` only where the callee approves parked runs, § 5). Owners without a gate: `needs: code` |
 | `.github/workflows/codeql-analysis.yml` | copy of the owner's version; required for the code-scanning rule |
-| `.github/renovate.json` | `extends: ["github>unional/renovate-preset"]`, plus the repo's own auto-merge rules while the published preset lacks them — the only dependency-automation file; see § 6 |
+| `.github/renovate.json` | `{"extends": ["github>unional/renovate-preset"]}` — the only dependency-automation file; see § 6 |
 | `.node-version`, `.npmrc` | pinned Node; `minimumreleaseage=1440` guards against fresh-publish supply-chain attacks |
 | `commitlint.config.js` + `.husky/commit-msg` | conventional commits enforced locally |
 | `biome.json` | `extends: ["@repobuddy/biome/recommended"]` |
@@ -862,7 +855,7 @@ Three dead ends:
 - Do not switch the required context to `code / all-checks` before it has gone green on the migration PR, and do not try to merge that PR while the ruleset still requires `all-checks` (§ 2).
 - Do not reconcile `main` next to a `merge-backstop` ruleset. Fold it in: PUT `main` first, then delete `merge-backstop` (§ 4).
 - Do not call the publish gate from `pull-request.yml` on `changeset-release/` branches. It never fires there. Make it a `needs:` of the release job.
-- Do not reduce a repo's `renovate.json` to a bare `extends` while the published `unional/renovate-preset` has no auto-merge rules. That turns auto-merge off. Do not publish the preset yourself; report the drift.
+- Do not strip a repo's own Renovate auto-merge rules before confirming the published `unional/renovate-preset` carries `platformAutomerge` and the auto-merge rules. Stripping them early turns auto-merge off.
 - Do not read or write the org `*_enabled_for_new_repositories` fields. GitHub removed them; code security configurations replace them.
 
 ## References

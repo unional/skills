@@ -8,6 +8,6 @@
 - The release caller grants `actions: write`, so the v2 release workflow can approve the Version PR's parked runs. The plain `GITHUB_TOKEN` does create those runs.
 - Reusable workflows are pinned to the owner's release tag (`@v2` for `@changesets/cli` v3), not `@main`.
 - The skill gives the order for renaming the required check from `all-checks` to `code / all-checks`, and for folding a `merge-backstop` ruleset into `main`.
-- It no longer strips a repo's Renovate auto-merge rules while the published preset lacks them. The drift goes to the owner as a decision.
+- A repo's own Renovate auto-merge rules are stripped only once the published preset carries them. The soak text now matches the asset's `3 days`.
 - The org's `*_enabled_for_new_repositories` fields are dropped from `assets/org-settings.json`. GitHub removed them in favour of code security configurations.
 - Tip added: run the publish gate locally before switching a release onto it.

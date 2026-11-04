@@ -108,7 +108,7 @@ Read the failing job's **name and duration** first — they identify the class f
 | `401 Unauthorized - GET .../-/whoami` | `NPM_TOKEN` expired or revoked |
 | `ENONPMTOKEN: No npm token specified` **after** migrating | Not a token problem — OIDC was never reached. See the failure catalogue |
 | `Publish command exited with code 1` | Real failure in the publish step — read further, do not assume auth |
-| `E403 cannot publish over previously published versions` | Either `version` was lowered below the registry, or the caller is on `@v1` and got npm 12 |
+| `E403 cannot publish over previously published versions` | Either `version` was lowered below the registry, or changesets CLI 2 met npm 12 (the `@v1` workflow installs `npm@latest`) |
 | Release skipped, publish gate red, everything else green | The tarball or its runtime dependencies changed. PR CI never runs this gate |
 
 Load `references/failure-catalogue.md` for the full set with worked examples.
@@ -265,9 +265,9 @@ The caller grants permissions; the callee cannot exceed them.
       actions: write # approves the Version Packages PR's parked runs
 ```
 
-`actions: write` is for the approval step in the v2 line of repobuddy's and cyberuni's
-`pnpm-release-changeset-oidc.yml` (Step 6). unional's copy has no such step, so leave the scope out
-there. **apply-repo-baseline** § 5 has the detail, and its § Publish gate has the `publish-gate`
+`actions: write` is for the approval step in the v2 line of `pnpm-release-changeset-oidc.yml`
+(Step 6). repobuddy's, cyberuni's and unional's copies all have it, so every owner's caller grants
+the scope. **apply-repo-baseline** § 5 has the detail, and its § Publish gate has the `publish-gate`
 job.
 
 Declare the block even where the repo default is already `write`. It is least privilege, it works
@@ -293,20 +293,26 @@ Pin a tag of `<owner>/.github`, never `@main`. The tag depends on the owner and 
 `@changesets/cli` major; **apply-repo-baseline** § Which ref owns the rule (repobuddy and cyberuni
 pin `@v2` for CLI v3). This section covers why `@v1` is not one of the choices.
 
-`@v1` of the changeset release workflows runs `npm install -g npm@latest`. npm 12 wraps
-`npm info --json` in an array (changesets/changesets#2164), which breaks publishing under **both**
-changesets CLI majors:
+`npm@latest` is now npm 12 (12.2.1 on 2026-11-04), and npm 12 wraps `npm info --json` in an array
+(changesets/changesets#2164). Whether that breaks a publish depends on the changesets CLI, not on
+which npm the workflow installs:
 
-| changesets CLI | What npm 12 does to it |
+| changesets CLI | Under npm 12 |
 | --- | --- |
-| 2.x | every version reads as unpublished, so it republishes and dies on `E403` |
-| 3.x | the npm path is fixed, the pnpm one is not — a pnpm workspace gets a `TypeError` in `getUnpublishedPackages` |
+| 2.x | always runs `npm info`, reads every version as unpublished, republishes, and dies on `E403` |
+| 3.0.0 to 3.0.2 | the npm path unwraps the array. A pnpm 10 workspace still breaks, because pnpm 10's `info` passes through to npm: `TypeError` in `getUnpublishedPackages` (changesets/changesets#2274) |
+| 3.0.3 and later | safe. The npm client unwraps the array, and a pnpm repo runs `pnpm info` with the array-aware parser on pnpm 10 and earlier (changesets/changesets#2276) |
 
-Three repos were exposed on `@v1` under one major or the other. Move them off it.
+So `npm@latest` is safe on any v2 line, which pairs `changesets/action@v2` with CLI 3. Keep the
+CLI at 3.0.3 or later. repobuddy's `pnpm-release-changeset-oidc.yml@v2` installs `npm@latest` and
+has published on npm 12.2.1: `repobuddy/buddy-agent-harness` 1.0.0 (run 41851653792) and
+`@repobuddy/storybook` 2.34.1 (run 41167167643). repobuddy/.github#77 has the evidence. cyberuni's
+v2 pins `npm@11`; CLI 3 callers do not need that pin.
 
-Do not assume `@v2` pins npm either. As of 2026-11-04, cyberuni's v2 installs `npm@11`, while
-repobuddy's v2 and unional's copy install `npm@latest`. Read the `npm install -g` step at the ref
-you pin.
+`@v1` is the hazard. It pairs `changesets/action@v1` with CLI 2 and installs `npm@latest`, so it is
+broken under npm 12. Three repos were exposed on `@v1`. Upgrade them to CLI 3 and move them to
+`@v2`. A repo that has to stay on CLI 2 must pin npm 11 (11.5.1 or later, which trusted publishing
+needs) in its own release workflow; the frozen `@v1` will not.
 
 `@main` is out because it lands every upstream change in every repo at once; that is how one
 `pnpm-verify` playwright bug reached five repos in a day. A moving major tag (`@v2`) still moves.
@@ -379,13 +385,12 @@ What differs is who approves them:
 | Release workflow | How the PR is opened | Who approves the parked runs |
 | --- | --- | --- |
 | `pnpm-release-changeset.yml` — token variant | the `CI_GITHUB_TOKEN` **PAT** | you, by hand |
-| `pnpm-release-changeset-oidc.yml` — secretless, repobuddy and cyberuni v2 | the built-in **`GITHUB_TOKEN`** | the workflow itself, given `actions: write` (Step 4) |
-| `pnpm-release-changeset-oidc.yml` — secretless, unional | the built-in **`GITHUB_TOKEN`** | you, by hand |
+| `pnpm-release-changeset-oidc.yml` — secretless, v2 line (repobuddy, cyberuni, unional) | the built-in **`GITHUB_TOKEN`** | the workflow itself, given `actions: write` (Step 4) |
 
-This skill used to say a PR opened with `GITHUB_TOKEN` gets no runs at all, and unional's copy of
-the workflow still says so in its header. On `repobuddy/buddy-agent-harness` (PR #264) the runs were
-created and parked. Read
-the runs before concluding anything, and approve what is held:
+This skill used to say a PR opened with `GITHUB_TOKEN` gets no runs at all. On
+`repobuddy/buddy-agent-harness` (PR #264) the runs were created and parked, and after approval they
+ran full jobs and passed. Read the runs before concluding anything, and approve what is held, newest
+first (**ship-it** step 3):
 
 ```bash
 gh run list --repo <o>/<r> --status action_required
@@ -466,8 +471,10 @@ Each is `gh-readonly-queue/main/pr-<N>-<base-sha>`. The second PR's base SHA sho
 - Do not lower a `version` that is ahead of the registry. It reads as a typo and it queues an `E403`.
 - Do not treat the version reconciliation as part of the semantic-release migration. Both production
   incidents were on repos already using changesets.
-- Do not leave a caller on `@v1` of a changeset release workflow. It installs `npm@latest`, and npm 12
-  breaks publishing under both changesets CLI majors.
+- Do not leave a caller on `@v1` of a changeset release workflow. It pairs with changesets CLI 2 and
+  installs `npm@latest`, and npm 12 breaks CLI 2's publish.
+- Do not pin npm 11 to fix a CLI 3 repo under npm 12. Upgrade the CLI to 3.0.3 or later; `npm@latest`
+  is safe there.
 - Do not read a publish-gate block as a bad tarball before checking what it packed. An out-of-workspace
   `package.json` without `private: true` blocks a release for a package nobody publishes.
 - Do not spend one OTP code per package or per repo. Transfer everything first, then chain the calls.
@@ -483,6 +490,8 @@ Each is `gh-readonly-queue/main/pr-<N>-<base-sha>`. The second PR's base SHA sho
 - **setup-changesets** — the changesets config itself, including the v2 → v3 upgrade this skill only pairs versions for
 - https://docs.npmjs.com/trusted-publishers/ — trusted publisher concepts
 - https://github.com/changesets/changesets/issues/2164 — npm 12 wraps `npm info --json` in an array; the root of the `@v1` publish failures
+- https://github.com/changesets/changesets/issues/2274 and https://github.com/changesets/changesets/pull/2276 — the pnpm 10 `TypeError` under CLI 3.0.0 to 3.0.2, fixed in 3.0.3
+- https://github.com/repobuddy/.github/pull/77 — why `npm@latest` is safe on the v2 line, with the production runs
 - https://github.com/semantic-release/npm/issues/1069 — `ENONPMTOKEN` under correct OIDC config; closed as a resolution/`.npmrc` fault, not a plugin bug
 - https://github.com/npm/cli/issues/8547 — trusted publishers cannot `npm dist-tag add`; the root of the maintenance-branch `E401`
 - https://docs.npmjs.com/cli/v11/commands/npm-trust/ — `npm trust` subcommands and flags

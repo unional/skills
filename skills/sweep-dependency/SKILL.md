@@ -49,7 +49,7 @@ A pod that reports a removed export or changed type adds it to the break list. N
 
 ### 5. Release
 
-- Changesets repos open a "Version Packages" PR on `changeset-release/main`. If it was opened by `github-actions` (GITHUB_TOKEN), it has no checks. Run `scripts/release-ci.sh <local-dir>` to push an empty commit that starts CI. Ask once per sweep before the first push. A PR opened by a GitHub App (for example `app/repobuddy`) runs CI on its own.
+- Changesets repos open a "Version Packages" PR on `changeset-release/main`. If it was opened by `github-actions` (GITHUB_TOKEN), its `pull_request` runs exist but are held as `action_required`. The secretless release workflow approves them itself when the caller grants `actions: write`; otherwise approve them, newest first (**ship-it** steps 2 and 3). Only where the branch's head has no `pull_request` run at all, run `scripts/release-ci.sh <local-dir>` to push an empty commit that starts CI. Ask once per sweep before the first push. A PR opened by a GitHub App (for example `app/repobuddy`) runs CI on its own.
 - Gate the release PR like a pod PR (no pod report needed), then merge it.
 - **Verify on npm**: `curl -s -H "Accept: application/vnd.npm.install-v1+json" https://registry.npmjs.org/<pkg> | jq -r '."dist-tags".latest'`; read the registry directly, because `npm view` can lag a publish. A success log and a new git tag prove nothing.
   - Version missing a few minutes after a green run → wait. npm staged-publish lag is normal.

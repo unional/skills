@@ -110,8 +110,10 @@ Two distinct causes, and the fix differs:
    Step 3.
 2. **npm 12 under changesets CLI 2.x.** npm 12 wraps `npm info --json` in an array
    (changesets/changesets#2164), so changesets reads every published version as unpublished and tries
-   to publish the lot. The caller is on `@v1` of the reusable release workflow, which installs
-   `npm@latest`. Move the caller to `@v2`, which pins `npm@11`.
+   to publish the lot. The caller is on `@v1` of the reusable release workflow, which pairs with
+   CLI 2 and installs `npm@latest`. Upgrade the repo to CLI 3 (3.0.3 or later) and move the caller to
+   `@v2`; npm 12 is safe there. A repo that has to stay on CLI 2 pins npm 11 (11.5.1 or later) in its
+   own release workflow.
 
 **Confirm** which one by reading the registry and comparing:
 
@@ -124,10 +126,12 @@ grep -rn 'uses:.*release-changeset' .github/workflows/
 ## `TypeError` in `getUnpublishedPackages`
 
 **Signature** — the publish step throws a `TypeError` inside changesets' `getUnpublishedPackages`, on
-a **pnpm workspace** running changesets CLI 3.x.
+a **pnpm 10 workspace** running changesets CLI 3.0.0 to 3.0.2 under npm 12.
 
-Same root cause as the `E403` above. CLI 3 fixed the npm code path for npm 12's array-wrapped
-`npm info --json` output and did not fix the pnpm one. Pin npm by moving the caller off `@v1`.
+Same root cause as the `E403` above. pnpm 10's `info` passes through to npm, and those CLI versions
+did not unwrap npm 12's array-wrapped `npm info --json` output on the pnpm path
+(changesets/changesets#2274). **Fix** — upgrade `@changesets/cli` to 3.0.3 or later, which does
+(changesets/changesets#2276). Pinning npm 11 also avoids it, but is not needed.
 
 ## changesets action and CLI major mismatch
 

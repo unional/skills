@@ -373,12 +373,12 @@ Declaring `permissions:` drops every unlisted scope to `none` — which is why `
 `pull-requests` appear alongside `id-token`, not just the scope the callee obviously needs.
 
 `actions: write` is for the release workflow's approval step. The v2 line of
-`pnpm-release-changeset-oidc.yml` in repobuddy and cyberuni approves the Version PR's parked
+`pnpm-release-changeset-oidc.yml` in repobuddy, cyberuni and unional approves the Version PR's parked
 `pull_request` runs itself (§ The version PR with no checks), and it needs this scope to do that.
 That workflow declares no `permissions:` of its own, so the caller's grant passes straight through.
 Without `actions: write` the release still publishes, but it logs a warning and the PR's runs stay
-parked. Before adding the scope, read the callee's header at the pinned ref. unional's copy has no
-approval step, so leave the scope out there. Do not grant a scope that nothing uses.
+parked. Before adding the scope, read the callee's header at the pinned ref, and leave the scope out
+if the workflow there has no approval step. Do not grant a scope that nothing uses.
 
 **Order matters.** Land the caller edit *before* the `PUT .../actions/permissions/workflow` that
 lowers the repo. Lowering first breaks the next release **silently** — `startup_failure`, zero jobs,
@@ -537,7 +537,7 @@ gh api orgs/<org>/installations --jq '.installations[]|{app:.app_slug,scope:.rep
 | `can_approve_pull_request_reviews: true` **on a repo with no PR-opening workflow** | A workflow can satisfy the review requirement itself, hollowing out the rule above | Set `false` — but only after the grep in §5 comes back empty. On a changesets repo `true` is required, not a finding |
 | `DeployKey` bypass with **zero** deploy keys | Reads as harmless and is — until someone adds a key, which then bypasses every rule silently | Remove the bypass actor. Re-add deliberately if a key is ever needed. `assets/branch-ruleset.json` no longer ships one |
 | `RepositoryRole` bypass actor `2` | Role `2` is **triage**, which has no push access, so the bypass grants nothing and reads as if it does. Usually a typo for `4` (maintain) | Drop it. The asset ships `5` (admin) alone |
-| `bypass_actors: []` on a repo transferred within the last few days | **A transfer wipes ruleset bypass actors.** With the version PR unable to report its own checks, the release then deadlocks: nothing satisfies the rule and nobody can override it | Restore `RepositoryRole:5` immediately after any transfer, as part of the transfer, not the next sweep. Read the ruleset back and confirm |
+| `bypass_actors: []` on a repo transferred within the last few days | **A transfer wipes ruleset bypass actors.** Whenever the version PR's held runs go unapproved, or no run is created, its checks never report, and the release then deadlocks: nothing satisfies the rule and nobody can override it | Restore `RepositoryRole:5` immediately after any transfer, as part of the transfer, not the next sweep. Read the ruleset back and confirm |
 | Apps installed org-wide (`repository_selection: "all"`) | A retired tool keeps posting checks on every repo in the org, including ones transferred in later. Removing its **config** does not stop it; only uninstalling does | Uninstall or re-scope at `/organizations/<org>/settings/installations`. **Human-only** — needs an app JWT or owner UI |
 
 Mergify is the case that row is written for. It can be installed at **account** level, posting a `Mergify Merge Queue` check on repos that have no `.mergify.yml` anywhere. Three repos in the sweep were in that state, so a repo-by-repo grep for config finds nothing and concludes wrongly. The installations endpoint above is the only read that sees it. § 6's "delete `.github/mergify.yml`" removes the rules, never the app.
@@ -813,10 +813,10 @@ gh api "repos/$R/actions/runs/<id>" --jq '{event, conclusion, actor: .actor.logi
   say that token creates no runs. That is wrong for the PR's `pull_request` runs: on
   `repobuddy/buddy-agent-harness` (PR #264), changesets/action opened the Version PR with the
   plain `GITHUB_TOKEN`, and its `pull_request` runs were created and parked as `action_required`.
-  The v2 line of `pnpm-release-changeset-oidc.yml` in repobuddy and cyberuni now approves those
+  The v2 line of `pnpm-release-changeset-oidc.yml` in repobuddy, cyberuni and unional approves those
   parked runs itself, right after it opens or updates the PR. It needs the caller to grant
   `actions: write` (§ 5). If the runs are still parked, check three things. Does the caller grant
-  the scope? Does the callee at the pinned ref have the approval step (unional's does not)? Does
+  the scope? Does the callee at the pinned ref have the approval step? Does
   the release run log a warning from that step? Then approve by hand as above.
 
   If `gh run list` shows **no** `pull_request` run for the branch at all, the PR really has no

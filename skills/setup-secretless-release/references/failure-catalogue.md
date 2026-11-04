@@ -176,8 +176,9 @@ so `old/`, `archive/`, `examples/` and template payloads all count. It also diff
 against the published `latest`, which can be years stale — `@unional/create-monorepo@0.1.0` from 2019
 declared its whole toolchain under `dependencies`, so the current six read as four new ones.
 
-**Fix** — add `private: true` to the out-of-workspace manifest. For the dependency diff there is no
-per-package allowlist, so confirm the current dependencies are correct and say so in the PR.
+**Fix** — add `private: true` to the out-of-workspace manifest. For the dependency diff, confirm the
+current dependencies are correct. On repobuddy's v2 gate, acknowledge each one with a reason in
+`.github/publish-gate.json`. cyberuni's gate has no allowlist, so say so in the PR.
 
 ## `E404 PUT` when registering a trusted publisher
 

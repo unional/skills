@@ -25,7 +25,7 @@ Not for: authoring CI workflow content (that lives in each owner's `.github` rep
 | Module | Target | Data | API |
 |---|---|---|---|
 | Branch ruleset | repo | `assets/branch-ruleset.json` (+ `rule-code-scanning.json` when CodeQL runs) | `/repos/{o}/{r}/rulesets` |
-| Merge queue | repo, org-owned only | `assets/rule-merge-queue.json` — a rule inside the `main` ruleset, see § 3 | same |
+| Merge queue | repo, org-owned only | `assets/rule-merge-queue.json` — a rule inside the default-branch ruleset, see § 3 | same |
 | Copilot review | repo, opt-in | `assets/copilot-review-ruleset.json` | same |
 | Merge settings | repo | `assets/repo-settings.json` | `PATCH /repos/{o}/{r}` |
 | About panel | repo, Pages only | § About panel | `PATCH /repos/{o}/{r}` |
@@ -233,14 +233,53 @@ and `allow_update_branch: false`.
 
 For each module, read current state, compare to desired, print a compact diff. Then apply only what differs:
 
-```bash
-# Ruleset: reconcile by NAME. Creating a second ruleset over the same branch
-# silently stacks both — the union applies and it is confusing to unwind.
-id=$(gh api "repos/$R/rulesets" --jq '.[] | select(.name=="main") | .id')
-[ -n "$id" ] \
-  && gh api -X PUT  "repos/$R/rulesets/$id" --input desired.json \
-  || gh api -X POST "repos/$R/rulesets"     --input desired.json
+#### Find the default-branch ruleset by what it protects, not by name
 
+Creating a second ruleset over the same branch silently stacks both. The union applies, and it is
+confusing to unwind. The name does not identify the ruleset: the baseline creates `main`,
+repobuddy's **setup-github-repo** creates `default-branch-protection`, and `unional/skills` has one
+named `default`. So look for the active `branch` rulesets whose `conditions.ref_name.include`
+names the default branch, either as `~DEFAULT_BRANCH` or as its literal ref. The list endpoint
+omits `conditions`, so read each ruleset:
+
+```bash
+def=$(gh api "repos/$R" --jq .default_branch)
+for rid in $(gh api "repos/$R/rulesets?includes_parents=false" \
+    --jq '.[] | select(.target=="branch" and .enforcement=="active") | .id'); do
+  gh api "repos/$R/rulesets/$rid" | jq -r --arg ref "refs/heads/$def" '
+    select(any(.conditions.ref_name.include[]?; . == "~DEFAULT_BRANCH" or . == $ref))
+    | "\(.id)\t\(.name)\t\([.rules[].type] | join(","))"'
+done
+```
+
+Two of the matches are not the protection ruleset. Set them aside first:
+
+- **`merge-backstop`** is folded into the protection ruleset and then deleted (below).
+- **A ruleset whose only rule is `copilot_code_review`** is the separate Copilot review ruleset
+  (§ 3). Reconcile it on its own.
+
+The rest are protection rulesets. What to do depends on how many there are:
+
+| Protection rulesets | Do |
+|---|---|
+| none | POST `desired.json`. It keeps the asset's name, `main`. |
+| one | PUT `desired.json` to that id, keeping the ruleset's current name, whatever it is. |
+| more than one | Stop. Report each one's id, name and rule types, and apply nothing to rulesets. Which one survives is a protection decision for the owner. |
+
+```bash
+# one protection ruleset: $id and $name from the lookup
+jq --arg n "$name" '.name = $n' desired.json > put.json
+gh api -X PUT "repos/$R/rulesets/$id" --input put.json
+# none
+gh api -X POST "repos/$R/rulesets" --input desired.json
+```
+
+An `evaluate` or `disabled` ruleset over the default branch is not a candidate. List it in the
+report so the owner can delete it.
+
+#### The other modules
+
+```bash
 gh api -X PATCH "repos/$R" --input assets/repo-settings.json
 gh api -X PUT   "repos/$R/actions/permissions/workflow" --input "$perms"   # § 5 picks the file — run it LAST
 gh api -X PATCH "repos/$R" --input assets/security-settings.json   # public repos only
@@ -252,28 +291,24 @@ gh api -X PATCH "repos/$R" --input assets/security-settings.json   # public repo
 is `code / all-checks`), do not PUT it as part of the batch. Wait until the new context is green on
 the migration PR, as § 2 "Switching the required check" says.
 
-**Check for a `merge-backstop` ruleset before you reconcile.** repobuddy's **setup-github-repo**
+**Fold a `merge-backstop` ruleset in, then delete it.** repobuddy's **setup-github-repo**
 creates one: a separate ruleset over the default branch with its own merge queue (SQUASH,
 `max_entries_to_merge: 5`), its own required checks (often the old `all-checks`), and no bypass
-actors. Reconcile-by-name finds only `main`, so applying the baseline next to it stacks two queues
-with conflicting merge methods, and the union of both sets of required checks applies.
+actors. Leaving it next to the protection ruleset stacks two queues with conflicting merge methods,
+and the union of both sets of required checks applies. The lookup above lists it. Fold it in this
+order:
 
-```bash
-gh api "repos/$R/rulesets" --jq '.[] | "\(.id) \(.name)"'
-```
-
-If `merge-backstop` is there, fold it into `main` and then delete it, in this order:
-
-1. PUT `main` with the baseline queue rule (§ 3: MERGE, `max_entries_to_merge: 1`) and the
-   baseline required checks. The baseline's merge shape replaces the backstop's SQUASH.
-2. Read `main` back and confirm the queue and `code / all-checks` are present.
+1. Write the protection ruleset with the baseline queue rule (§ 3: MERGE,
+   `max_entries_to_merge: 1`) and the baseline required checks. PUT the one the lookup found, or
+   POST `main` when it found none. The baseline's merge shape replaces the backstop's SQUASH.
+2. Read that ruleset back and confirm the queue and `code / all-checks` are present.
 3. `gh api -X DELETE "repos/$R/rulesets/<merge-backstop id>"`.
 
 Deleting first leaves the branch unprotected between the two calls. Doing it in this order means
 the branch always has at least one active queue.
 
 The backstop's empty `bypass_actors` was deliberate: it stops an agent holding an admin token from
-merging around the queue. `main` keeps `RepositoryRole: 5`, because a transfer that wipes bypass
+merging around the queue. The protection ruleset keeps `RepositoryRole: 5`, because a transfer that wipes bypass
 actors otherwise deadlocks the release (§ Hardening audit). Folding the backstop in therefore
 gives up that property. Do not decide it silently; report it to the owner as a decision.
 
@@ -853,7 +888,8 @@ Three dead ends:
 - Do not touch archived repos.
 - Do not pin `<owner>/.github` workflows at `@main`. Pin the tag the owner's README names for the repo's `@changesets/cli` major (§ Which ref).
 - Do not switch the required context to `code / all-checks` before it has gone green on the migration PR, and do not try to merge that PR while the ruleset still requires `all-checks` (§ 2).
-- Do not reconcile `main` next to a `merge-backstop` ruleset. Fold it in: PUT `main` first, then delete `merge-backstop` (§ 4).
+- Do not find the default-branch ruleset by name. Find it by `conditions.ref_name`, PUT the one match whatever its name, and stop when more than one protection ruleset matches (§ 4).
+- Do not reconcile next to a `merge-backstop` ruleset. Fold it in: write the protection ruleset first, then delete `merge-backstop` (§ 4).
 - Do not call the publish gate from `pull-request.yml` on `changeset-release/` branches. It never fires there. Make it a `needs:` of the release job.
 - Do not strip a repo's own Renovate auto-merge rules before confirming the published `unional/renovate-preset` carries `platformAutomerge` and the auto-merge rules. Stripping them early turns auto-merge off.
 - Do not read or write the org `*_enabled_for_new_repositories` fields. GitHub removed them; code security configurations replace them.

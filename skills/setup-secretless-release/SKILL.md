@@ -257,7 +257,7 @@ The caller grants permissions; the callee cannot exceed them.
 ```yaml
   release:
     uses: <owner>/.github/.github/workflows/pnpm-release-changeset-oidc.yml@<ref>   # below
-    needs: [code, publish-gate]   # plain `code` where the owner has no gate
+    needs: [code, publish-gate]   # apply-repo-baseline § Publish gate
     permissions:
       id-token: write
       contents: write

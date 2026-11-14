@@ -707,6 +707,7 @@ Repos releasing with changesets call the gate from `release.yml`, as a job the r
 ```yaml
   publish-gate:
     uses: <owner>/.github/.github/workflows/pnpm-publish-gate.yml@<ref>   # § Which ref
+    needs: code
     permissions:
       contents: read
 
@@ -720,9 +721,13 @@ It diffs the tarball contents and runtime `dependencies` against the published v
 files that must never ship (tests, key material, `.env`, repo metadata) and new runtime deps, while
 **reporting without failing** on ordinary churn.
 
-**Do not put it in `pull-request.yml` on `changeset-release/` branches.** That was the earlier
-advice here, and that placement never fires. The gate workflow's own header says so (repobuddy and
-cyberuni `pnpm-publish-gate.yml`). A job gated on the Version PR runs only if that PR gets
+`needs: code` keeps the gate from packing a tree that failed verification. The gate installs and
+builds on its own, so it needs nothing else from `code`. This shape passed two release runs on
+cyberuni/id-vault.
+
+**Do not put it in `pull-request.yml` on `changeset-release/` branches.** That placement never
+fires. The gate workflow's own header says so (repobuddy and cyberuni `pnpm-publish-gate.yml`).
+A job gated on the Version PR runs only if that PR gets
 `pull_request` runs, and with the plain `GITHUB_TOKEN` those runs are parked or never created
 (§ The version PR with no checks). The gate packs the working tree itself, so it needs no PR
 context. As a `needs:` of release it runs on `main` right before `changeset publish`. It also runs
@@ -771,7 +776,7 @@ Setup mode only — the per-repo files the baseline assumes. Owner-level content
 | File | Content |
 |---|---|
 | `.github/workflows/pull-request.yml` | job `code` → `<owner>/.github/.github/workflows/pnpm-verify*.yml@<ref>` (§ Which ref); add `merge_group:` to `on:` before adding a merge queue rule (§ 3) — the queue's branch fires neither `pull_request` nor `push` |
-| `.github/workflows/release.yml` | job `code` (same reusable) + job `publish-gate` → `pnpm-publish-gate.yml@<ref>`, `permissions: contents: read` (§ Publish gate) + job `release` → `pnpm-release-changeset*.yml@<ref>`, `needs: [code, publish-gate]`, job `permissions: id-token/contents/pull-requests/actions: write` (`actions` only where the callee approves parked runs, § 5). Owners without a gate: `needs: code` |
+| `.github/workflows/release.yml` | job `code` (same reusable) + job `publish-gate` → `pnpm-publish-gate.yml@<ref>`, `needs: code`, `permissions: contents: read` (§ Publish gate) + job `release` → `pnpm-release-changeset*.yml@<ref>`, `needs: [code, publish-gate]`, job `permissions: id-token/contents/pull-requests/actions: write` (`actions` only where the callee approves parked runs, § 5). Owners without a gate: `needs: code` |
 | `.github/workflows/codeql-analysis.yml` | copy of the owner's version; required for the code-scanning rule |
 | `.github/renovate.json` | `{"extends": ["github>unional/renovate-preset"]}` — the only dependency-automation file; see § 6 |
 | `.node-version`, `.npmrc` | pinned Node; `minimumreleaseage=1440` guards against fresh-publish supply-chain attacks |

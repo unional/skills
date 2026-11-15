@@ -109,9 +109,21 @@ git push origin changeset-release/main
 
 The changesets bot force-pushes over it on its next run, so it costs nothing.
 
-### 4. Wait for green, then merge
+### 4. Wait for green, then for the merge queue, then merge
 
-Merge normally — respect the repo's merge method and queue:
+`CLEAN` with every check green does not mean the release PR goes next. Another PR may already be in the `main` merge queue. Read the queue before merging:
+
+```bash
+gh api graphql -f query='query($o:String!,$r:String!){repository(owner:$o,name:$r){mergeQueue(branch:"main"){entries(first:10){nodes{position state pullRequest{number title}}}}}}' -f o=<o> -f r=<r>
+```
+
+- **`mergeQueue` is `null`, or `nodes` is empty.** Nothing is ahead. Merge.
+- **The release PR is at `position` 1.** It is at the front. Do not merge it again; wait for the queue to land it.
+- **Other entries are ahead of the release PR, or the release PR is not in the queue.** Wait, then read the queue again. Merge only once the release PR is at the front or the queue is empty. Report which PRs are ahead and their `state`, so the owner can see why the release is waiting.
+
+`gh pr view` cannot answer this. `isInMergeQueue` is not a field it supports, and asking for it fails with `Unknown JSON field`.
+
+Then merge normally, respecting the repo's merge method:
 
 ```bash
 gh pr merge <n> --repo <o>/<r>            # enqueues where a merge queue exists

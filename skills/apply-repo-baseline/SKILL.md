@@ -18,7 +18,7 @@ The opinions live in `assets/*.json`, not in these steps. Change a default there
 - Org-level: new org, or aligning org defaults for new repos
 - "The Version Packages PR has no checks and cannot merge" on a fresh or just-transferred repo
 
-Not for: authoring CI workflow content (that lives in each owner's `.github` repo), or repo creation itself.
+Not for: authoring CI workflow content (that lives in `repobuddy/.github`, the one shared home for every owner), or repo creation itself.
 
 ## Baseline modules
 
@@ -58,12 +58,12 @@ The ruleset requires the context `code / all-checks`. That string is `<caller jo
 # .github/workflows/pull-request.yml
 jobs:
   code:                                    # ← job id supplies the first half
-    uses: <owner>/.github/.github/workflows/pnpm-verify-linux.yml@<ref>   # § Which ref
+    uses: repobuddy/.github/.github/workflows/pnpm-verify.yml@v2   # § Which ref
 ```
 
 where the reusable workflow ends with an `all-checks` job that fails if `verify` did not succeed.
 
-Check the repo's `.github/workflows/pull-request.yml` for a job whose id is `code` calling one of the owner's `pnpm-verify*` reusable workflows. If it is missing or named differently, **fix CI first or the branch becomes unmergeable** — a required context that no run ever reports blocks every PR forever. Offer either: add the workflow (§ File layout), or apply the ruleset without the `required_status_checks` rule and note the gap.
+Check the repo's `.github/workflows/pull-request.yml` for a job whose id is `code` calling one of `repobuddy/.github`'s `pnpm-verify*` reusable workflows. If it is missing or named differently, **fix CI first or the branch becomes unmergeable** — a required context that no run ever reports blocks every PR forever. Offer either: add the workflow (§ File layout), or apply the ruleset without the `required_status_checks` rule and note the gap.
 
 Confirm from a real run rather than the filename, and read **both** endpoints. A required context is satisfied by a check-run *or* a commit status, and each API returns only its own kind:
 
@@ -79,30 +79,27 @@ A bare `CodeQL` required context is a version-naming mismatch, not a dead integr
 
 **Stop if the repo is on a legacy CI shape.** A single `nodejs.yml` calling `typescript-build.yml` / `typescript-test*.yml` / `npm-release.yml`, or hand-rolled steps, reports `build / …` and `test / …` and can never produce `code / all-checks`. Do not apply this baseline to such a repo — run **migrate-legacy-ci** first. It decides whether the repo should be archived, have its CI dropped, or be migrated, and most of them should not be migrated at all.
 
-Choose the reusable workflow by owner convention: `pnpm-verify-linux.yml` where it exists (unional), `pnpm-verify.yml` otherwise (clibuilder, cyberuni, repobuddy). Confirm the file exists in `<owner>/.github` **at the ref you pin** before pointing at it.
+Every owner calls the same reusable workflows: `repobuddy/.github` is the one shared home, for unional, clibuilder, cyberuni, repobuddy and every other org alike. Call `pnpm-verify.yml` (`bun-verify.yml` for a bun repo). `unional/.github`, `cyberuni/.github` and `stable-packages/.github` are old homes being retired; do not point a repo at them, and move a repo that still calls them. Confirm the file exists in `repobuddy/.github` **at the ref you pin** before pointing at it.
 
 #### Which ref
 
-Pin a tag of `<owner>/.github`, never `@main`. On repobuddy, cyberuni and unional, `main` carries
-unreleased changes. A caller on it takes every change the moment it merges, breaking ones
-included. Each of those `.github` repos says which tag to pin in its README under **Which ref to
-pin**. Read that section
-rather than assuming, because the layout differs by owner (unional keeps its v2 line on a `v2.x`
-branch, tagged `v2`).
+Pin `repobuddy/.github` at the released tag `@v2`, never `@main`. `main` carries unreleased
+changes, and a caller on it takes every change the moment it merges, breaking ones included.
+`repobuddy/.github`'s README covers the tag scheme under **Which ref to pin**.
 
-The changesets release workflows decide the tag, because `changesets/action` and `@changesets/cli`
-are a strict pair. Read the repo's `@changesets/cli` major:
+`v2` is the only line. It pairs `changesets/action@v2` with `@changesets/cli` v3 and installs
+`npm@latest`. `v1` is retired, and so are the `v1` and `v2` tags of `cyberuni/.github` and
+`stable-packages/.github`: move a caller on any of them to `repobuddy/.github@v2`. Read the repo's
+`@changesets/cli` major first:
 
 | Repo's `@changesets/cli` | Pin | Why |
 |---|---|---|
 | v3 | `@v2` | the v2 line runs `changesets/action@v2`, which refuses CLI v2 |
-| v2 | upgrade the CLI to v3, then `@v2` | `@v1` installs `npm@latest`, and npm 12 breaks the publish; **setup-secretless-release** has the detail |
+| v2 | upgrade the CLI to v3, then `@v2` | `v1` is retired, and it installs `npm@latest`, which npm 12 breaks for CLI 2; **setup-secretless-release** has the detail |
 
 Pin the same tag on every job in the repo (verify, publish gate, release) so they move together.
-List the tags with `gh api repos/<owner>/.github/tags --jq '.[].name'`, and confirm each workflow
-you call exists at that tag. The publish gate, for example, exists only on the v2 line of repobuddy
-and cyberuni. If an owner's `.github` has no tags at all, `@main` is the only ref; say so in the
-report instead of presenting it as a choice.
+Confirm each workflow you call exists at the tag:
+`gh api "repos/repobuddy/.github/contents/.github/workflows?ref=v2" --jq '.[].name'`.
 
 #### Switching the required check from `all-checks` to `code / all-checks`
 
@@ -360,8 +357,8 @@ tightening the org later:
 
 ```yaml
   release:
-    uses: <owner>/.github/.github/workflows/pnpm-release-changeset-oidc.yml@<ref>   # § Which ref
-    needs: [code, publish-gate]   # § Publish gate; plain `code` where the owner has no gate
+    uses: repobuddy/.github/.github/workflows/pnpm-release-changeset-oidc.yml@v2   # § Which ref
+    needs: [code, publish-gate]   # § Publish gate
     permissions:
       id-token: write
       contents: write
@@ -373,7 +370,7 @@ Declaring `permissions:` drops every unlisted scope to `none` — which is why `
 `pull-requests` appear alongside `id-token`, not just the scope the callee obviously needs.
 
 `actions: write` is for the release workflow's approval step. The v2 line of
-`pnpm-release-changeset-oidc.yml` in repobuddy, cyberuni and unional approves the Version PR's parked
+`pnpm-release-changeset-oidc.yml` in `repobuddy/.github` approves the Version PR's parked
 `pull_request` runs itself (§ The version PR with no checks), and it needs this scope to do that.
 That workflow declares no `permissions:` of its own, so the caller's grant passes straight through.
 Without `actions: write` the release still publishes, but it logs a warning and the PR's runs stay
@@ -431,7 +428,7 @@ Converge a repo onto:
 
 | Item | Desired state | Action |
 |---|---|---|
-| `.github/renovate.json` | `{"extends": ["github>unional/renovate-preset"]}` | create if missing; strip repo auto-merge rules only once the published preset carries them (below) |
+| `.github/renovate.json` | `{"extends": ["github>repobuddy/renovate-preset"]}` | create if missing; strip repo auto-merge rules only once the published preset carries them (below) |
 | Dependabot **alerts** | enabled | `PUT /repos/{o}/{r}/vulnerability-alerts` — Renovate reads these to raise fix PRs |
 | Dependabot **security updates** | disabled | `DELETE /repos/{o}/{r}/automated-security-fixes` |
 | `.github/dependabot.yml` | absent | delete (version updates move to Renovate) |
@@ -447,7 +444,7 @@ land the preset (with `platformAutomerge`) first, confirm one bot PR merges thro
 auto-merge, then remove Mergify and the automerge workflow.
 
 `assets/renovate-preset.json` is the canonical preset body. It lives here so the policy is
-reviewable with the rest of the baseline, but it is **published from `unional/renovate-preset`**.
+reviewable with the rest of the baseline, but it is **published from `repobuddy/renovate-preset`**.
 Edit it here, then copy it to that repo's `default.json`. Repos extend the published preset, never
 this file. When the two disagree, the published one is what runs.
 
@@ -458,14 +455,14 @@ auto-merge policy. For those repos, those lines are the only thing turning auto-
 Read the published preset first:
 
 ```bash
-gh api repos/unional/renovate-preset/contents/default.json --jq .content | base64 -d
+gh api repos/repobuddy/renovate-preset/contents/default.json --jq .content | base64 -d
 ```
 
 - It has `platformAutomerge: true` and the asset's `automerge` rules: reduce the repo's
   `renovate.json` to the `extends` line. Keep a repo rule that is a deliberate exception rather
   than a copy of the preset, for example one that turns auto-merge off for a single package.
 - It does not: leave the repo's rules in place and report that the preset is not yet published.
-  Do not publish to `unional/renovate-preset` from this skill. It changes the dependency policy of
+  Do not publish to `repobuddy/renovate-preset` from this skill. It changes the dependency policy of
   every repo that extends it at once.
 
 Two couplings in that preset worth preserving:
@@ -706,13 +703,13 @@ Repos releasing with changesets call the gate from `release.yml`, as a job the r
 
 ```yaml
   publish-gate:
-    uses: <owner>/.github/.github/workflows/pnpm-publish-gate.yml@<ref>   # § Which ref
+    uses: repobuddy/.github/.github/workflows/pnpm-publish-gate.yml@v2   # § Which ref
     needs: code
     permissions:
       contents: read
 
   release:
-    uses: <owner>/.github/.github/workflows/pnpm-release-changeset-oidc.yml@<ref>
+    uses: repobuddy/.github/.github/workflows/pnpm-release-changeset-oidc.yml@v2
     needs: [code, publish-gate]
     # permissions: as in § 5
 ```
@@ -726,7 +723,7 @@ builds on its own, so it needs nothing else from `code`. This shape passed two r
 cyberuni/id-vault.
 
 **Do not put it in `pull-request.yml` on `changeset-release/` branches.** That placement never
-fires. The gate workflow's own header says so (repobuddy and cyberuni `pnpm-publish-gate.yml`).
+fires. The gate workflow's own header says so (`repobuddy/.github`'s `pnpm-publish-gate.yml`).
 A job gated on the Version PR runs only if that PR gets
 `pull_request` runs, and with the plain `GITHUB_TOKEN` those runs are parked or never created
 (§ The version PR with no checks). The gate packs the working tree itself, so it needs no PR
@@ -737,9 +734,9 @@ tarball shows up one merge earlier.
 A failed gate shows up on the release run, not on any PR. `code / all-checks` does not include it,
 and neither should the ruleset's required contexts.
 
-The gate exists on the v2 line of `repobuddy/.github` and `cyberuni/.github`. `unional/.github` has
-none. A unional-owned repo has no gate to call: drop `publish-gate` from `needs:` and report the gap
-rather than reaching into another owner's `.github`.
+The gate exists on the v2 line of `repobuddy/.github`, which every owner calls, so a unional-owned
+repo gets it too. Acknowledge a deliberate new runtime dependency in the repo's
+`.github/publish-gate.json`, with a reason (`repobuddy/.github` README, § Publish gate).
 
 **Run the gate locally before switching a release onto it.** A first run against a years-old
 published version often blocks on something that is not a defect. **setup-secretless-release**
@@ -747,7 +744,7 @@ lists the usual two. Finding that out locally is cheaper than on a release run:
 
 ```bash
 gate=$(mktemp -d)
-git clone --depth 1 --branch <ref> https://github.com/<owner>/.github.git "$gate"
+git clone --depth 1 --branch v2 https://github.com/repobuddy/.github.git "$gate"
 pnpm install && pnpm build          # in the repo: the gate packs the built tree
 node "$gate/.github/scripts/publish-gate-cli.mjs"   # run from the repo root
 ```
@@ -771,21 +768,21 @@ inserts immediately after it, and without one the entries land in the wrong plac
 
 ## File layout
 
-Setup mode only — the per-repo files the baseline assumes. Owner-level content (reusable workflows, community health files) belongs in `<owner>/.github`, not copied here.
+Setup mode only — the per-repo files the baseline assumes. Shared content (reusable workflows, composite actions, scripts) belongs in `repobuddy/.github`, not copied here. Community health files stay in each owner's own `.github`.
 
 | File | Content |
 |---|---|
-| `.github/workflows/pull-request.yml` | job `code` → `<owner>/.github/.github/workflows/pnpm-verify*.yml@<ref>` (§ Which ref); add `merge_group:` to `on:` before adding a merge queue rule (§ 3) — the queue's branch fires neither `pull_request` nor `push` |
-| `.github/workflows/release.yml` | job `code` (same reusable) + job `publish-gate` → `pnpm-publish-gate.yml@<ref>`, `needs: code`, `permissions: contents: read` (§ Publish gate) + job `release` → `pnpm-release-changeset*.yml@<ref>`, `needs: [code, publish-gate]`, job `permissions: id-token/contents/pull-requests/actions: write` (`actions` only where the callee approves parked runs, § 5). Owners without a gate: `needs: code` |
-| `.github/workflows/codeql-analysis.yml` | copy of the owner's version; required for the code-scanning rule |
-| `.github/renovate.json` | `{"extends": ["github>unional/renovate-preset"]}` — the only dependency-automation file; see § 6 |
+| `.github/workflows/pull-request.yml` | job `code` → `repobuddy/.github/.github/workflows/pnpm-verify.yml@v2` (§ Which ref); add `merge_group:` to `on:` before adding a merge queue rule (§ 3) — the queue's branch fires neither `pull_request` nor `push` |
+| `.github/workflows/release.yml` | job `code` (same reusable) + job `publish-gate` → `pnpm-publish-gate.yml@v2`, `needs: code`, `permissions: contents: read` (§ Publish gate) + job `release` → `pnpm-release-changeset-oidc.yml@v2`, `needs: [code, publish-gate]`, job `permissions: id-token/contents/pull-requests/actions: write` (`actions` for the callee's approval of parked runs, § 5) |
+| `.github/workflows/codeql-analysis.yml` | copy of `repobuddy/.github`'s version; required for the code-scanning rule |
+| `.github/renovate.json` | `{"extends": ["github>repobuddy/renovate-preset"]}` — the only dependency-automation file; see § 6 |
 | `.node-version`, `.npmrc` | pinned Node; `minimumreleaseage=1440` guards against fresh-publish supply-chain attacks |
 | `commitlint.config.js` + `.husky/commit-msg` | conventional commits enforced locally |
 | `biome.json` | `extends: ["@repobuddy/biome/recommended"]` |
 | `.changeset/config.json` | `access: public`, `baseBranch: main` |
 | `package.json` scripts | `verify` = `run-p lint verify:pkg`; the reusable workflow runs `pnpm verify` and nothing else |
 
-Prefer **OIDC/trusted publishing** for release (`pnpm-release-changeset-oidc.yml` under unional, `pnpm-release-changeset.yml` under the orgs) — no `NPM_TOKEN` or `CI_GITHUB_TOKEN` to rotate. Each package needs a trusted publisher registered at `npmjs.com/package/<name>/access` naming the repo and the **caller** workflow filename.
+Prefer **OIDC/trusted publishing** for release (`pnpm-release-changeset-oidc.yml`, for every owner) — no `NPM_TOKEN` or `CI_GITHUB_TOKEN` to rotate. Each package needs a trusted publisher registered at `npmjs.com/package/<name>/access` naming the repo and the **caller** workflow filename.
 
 ## The version PR with no checks
 
@@ -818,7 +815,7 @@ gh api "repos/$R/actions/runs/<id>" --jq '{event, conclusion, actor: .actor.logi
   say that token creates no runs. That is wrong for the PR's `pull_request` runs: on
   `repobuddy/buddy-agent-harness` (PR #264), changesets/action opened the Version PR with the
   plain `GITHUB_TOKEN`, and its `pull_request` runs were created and parked as `action_required`.
-  The v2 line of `pnpm-release-changeset-oidc.yml` in repobuddy, cyberuni and unional approves those
+  The v2 line of `pnpm-release-changeset-oidc.yml` in `repobuddy/.github` approves those
   parked runs itself, right after it opens or updates the PR. It needs the caller to grant
   `actions: write` (§ 5). If the runs are still parked, check three things. Does the caller grant
   the scope? Does the callee at the pinned ref have the approval step? Does
@@ -891,12 +888,12 @@ Three dead ends:
 - Do not count squash and rebase being disabled as protection against an auto-merge armer. It is a side effect of the merge shape and it disappears the day someone re-enables them.
 - Do not retry a call the harness refuses in a different encoding. Two rewrites are settled (§ 4); anything else, stop and report.
 - Do not touch archived repos.
-- Do not pin `<owner>/.github` workflows at `@main`. Pin the tag the owner's README names for the repo's `@changesets/cli` major (§ Which ref).
+- Do not pin `repobuddy/.github` workflows at `@main` or at the retired `@v1`, and do not call `unional/.github`, `cyberuni/.github` or `stable-packages/.github`. Pin `repobuddy/.github@v2` (§ Which ref).
 - Do not switch the required context to `code / all-checks` before it has gone green on the migration PR, and do not try to merge that PR while the ruleset still requires `all-checks` (§ 2).
 - Do not find the default-branch ruleset by name. Find it by `conditions.ref_name`, PUT the one match whatever its name, and stop when more than one protection ruleset matches (§ 4).
 - Do not reconcile next to a `merge-backstop` ruleset. Fold it in: write the protection ruleset first, then delete `merge-backstop` (§ 4).
 - Do not call the publish gate from `pull-request.yml` on `changeset-release/` branches. It never fires there. Make it a `needs:` of the release job.
-- Do not strip a repo's own Renovate auto-merge rules before confirming the published `unional/renovate-preset` carries `platformAutomerge` and the auto-merge rules. Stripping them early turns auto-merge off.
+- Do not strip a repo's own Renovate auto-merge rules before confirming the published `repobuddy/renovate-preset` carries `platformAutomerge` and the auto-merge rules. Stripping them early turns auto-merge off.
 - Do not read or write the org `*_enabled_for_new_repositories` fields. GitHub removed them; code security configurations replace them.
 
 ## References

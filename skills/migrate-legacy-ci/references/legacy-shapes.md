@@ -10,8 +10,10 @@ the per-repo table.
 - The caller's job must be named **`code`**.
 - The callee must end in a job named **`all-checks`** that fails when `verify` did not succeed.
 
-`unional/.github`'s `pnpm-verify.yml` and `pnpm-verify-linux.yml` both end in `all-checks` (verified
-2026-08-08), as does `justland/.github`'s `yarn2-library-verify-linux.yml`. The legacy callees —
+`repobuddy/.github`'s `pnpm-verify.yml` ends in `all-checks`. At the 2026-08-08 audit,
+`unional/.github`'s `pnpm-verify.yml` and `pnpm-verify-linux.yml` did too, as did `justland/.github`'s
+`yarn2-library-verify-linux.yml`. Those are old homes: a migration points at `repobuddy/.github@v2`, not
+at them. The legacy callees —
 `typescript-build.yml`, `typescript-test-linux.yml`, `npm-release.yml` — do not. Renaming the caller job to
 `code` on a legacy callee produces `code / typescript`, which is still not the required context.
 

@@ -14,7 +14,7 @@ Converts a release pipeline from long-lived secrets to OIDC trusted publishing, 
 - Dependency PRs pile up because each needs a manual rebase after the previous merges
 - Auditing an owner's repos for pipelines that stopped publishing
 
-Not for: converging repo settings onto a baseline (**apply-repo-baseline**), or authoring the reusable workflow content itself (that lives in the owner's `.github` repo).
+Not for: converging repo settings onto a baseline (**apply-repo-baseline**), or authoring the reusable workflow content itself (that lives in `repobuddy/.github`, the one shared home for every owner).
 
 ## The target is pnpm + changesets. Migrate whenever possible.
 
@@ -65,16 +65,16 @@ one and the release run goes green and publishes **nothing** — see the proof s
 ### Why pnpm is the package manager
 
 Beyond matching the rest of the estate, it is the only one the shared workflows fully cover.
-`cyberuni/.github` carries `pnpm-*` and `bun-*` reusable workflows and **no `yarn-*` at all** — so a
-yarn repo bound for the org has nowhere to point its `code` job or its release, and converting stops
-being a later phase and becomes a precondition. It blocked repos in the first OTP batch.
+`repobuddy/.github` carries `pnpm-*` and `bun-*` reusable workflows and **no `yarn-*` at all** — so a
+yarn repo has nowhere to point its `code` job or its release, and converting stops being a later
+phase and becomes a precondition. It blocked repos in the first OTP batch.
 
 pnpm's strict, non-hoisted `node_modules` is also the point, not a side effect: it surfaces
 undeclared dependencies the repo was resolving by accident. Expect the conversion to expose
 pre-existing bugs rather than introduce them.
 
 **bun is a legitimate destination where a repo already uses it** — both `bun-verify.yml` and
-`bun-release-changeset-oidc.yml` exist in both orgs. Do not convert bun to pnpm as part of this
+`bun-release-changeset-oidc.yml` exist in `repobuddy/.github`. Do not convert bun to pnpm as part of this
 skill; that is a separate decision. npm and yarn are the ones to migrate.
 
 ## Prerequisites
@@ -108,7 +108,7 @@ Read the failing job's **name and duration** first — they identify the class f
 | `401 Unauthorized - GET .../-/whoami` | `NPM_TOKEN` expired or revoked |
 | `ENONPMTOKEN: No npm token specified` **after** migrating | Not a token problem — OIDC was never reached. See the failure catalogue |
 | `Publish command exited with code 1` | Real failure in the publish step — read further, do not assume auth |
-| `E403 cannot publish over previously published versions` | Either `version` was lowered below the registry, or changesets CLI 2 met npm 12 (the `@v1` workflow installs `npm@latest`) |
+| `E403 cannot publish over previously published versions` | Either `version` was lowered below the registry, or changesets CLI 2 met npm 12 (the retired `@v1` workflow installs `npm@latest`) |
 | Release skipped, publish gate red, everything else green | The tarball or its runtime dependencies changed. PR CI never runs this gate |
 
 Load `references/failure-catalogue.md` for the full set with worked examples.
@@ -116,7 +116,7 @@ Load `references/failure-catalogue.md` for the full set with worked examples.
 **Verify the reusable workflow names actually resolve.** A singular/plural typo fails in 0s and is invisible unless looked for:
 
 ```bash
-gh api repos/<owner>/.github/contents/.github/workflows --jq '.[].name'
+gh api "repos/repobuddy/.github/contents/.github/workflows?ref=v2" --jq '.[].name'
 ```
 
 ## Step 2 — Decide where the repo lives
@@ -218,9 +218,9 @@ Two of its behaviours surprise people, and both block on something that is not a
 - **It diffs runtime dependencies against the published `latest`, which may be years stale.**
   `@unional/create-monorepo@0.1.0` (2019) declared its whole toolchain under `dependencies`, so local
   `0.2.2`'s six real dependencies read as four new ones. Compare against what the package needs now,
-  not against 2019. cyberuni's gate has no allowlist, so the judgement is yours and goes in the PR.
-  repobuddy's v2 gate accepts an acknowledgement per dependency, with a written reason, in the
-  repo's `.github/publish-gate.json` (repobuddy/.github README, § Publish gate).
+  not against 2019. The gate at `repobuddy/.github@v2` accepts an acknowledgement per dependency,
+  with a written reason, in the repo's `.github/publish-gate.json` (repobuddy/.github README,
+  § Publish gate). The judgement is still yours: write the reason, and say it in the PR.
 
 ## Step 4 — Point the release at a secretless workflow
 
@@ -231,24 +231,24 @@ There are only two destinations, because the target is pnpm + changesets:
 | pnpm | `pnpm-release-changeset-oidc.yml` |
 | bun — where the repo already uses it | `bun-release-changeset-oidc.yml` |
 
-Both exist in `unional/.github` **and** `cyberuni/.github`. A repo on yarn or npm converts first
+Both exist in `repobuddy/.github`, which every owner calls. A repo on yarn or npm converts first
 (**modernize-repo**, package-manager phase) rather than picking a third row.
 
 `pnpm-release-semantic-oidc.yml` and `yarn-release-semantic-oidc.yml` still exist so unmigrated
 repos keep publishing. **They are not destinations.** Do not point a repo at one, and do not
 choose semantic-release for a simple single-package repo.
 
-`cyberuni` has **no `yarn-*` workflows at all** — not verify, not release — so for an org-bound repo
-the conversion is a precondition of this step, not a later phase. It blocked repos in the first OTP batch. Confirm what the owner actually carries rather than
-assuming the two are the same:
+`repobuddy/.github` has **no `yarn-*` workflows at all** — not verify, not release — so the
+conversion is a precondition of this step, not a later phase. It blocked repos in the first OTP
+batch. Confirm what the tag carries rather than assuming:
 
 ```bash
-gh api repos/<owner>/.github/contents/.github/workflows --jq '.[].name'
+gh api "repos/repobuddy/.github/contents/.github/workflows?ref=v2" --jq '.[].name'
 ```
 
-A repo living in the org should call the org's copy for **every** job, release and verify alike.
-Reaching into a personal namespace for the `code` job reintroduces the single point of failure the
-transfer removed.
+Call `repobuddy/.github` for **every** job, release and verify alike, whoever owns the repo.
+`unional/.github`, `cyberuni/.github` and `stable-packages/.github` are old homes being retired; a
+repo that still calls one of them for any job moves to `repobuddy/.github@v2`.
 
 If a repo uses a package manager the matching workflow does not cover, derive a new variant from the existing OIDC one and change only the auth — never start from the token-based workflow.
 
@@ -256,7 +256,7 @@ The caller grants permissions; the callee cannot exceed them.
 
 ```yaml
   release:
-    uses: <owner>/.github/.github/workflows/pnpm-release-changeset-oidc.yml@<ref>   # below
+    uses: repobuddy/.github/.github/workflows/pnpm-release-changeset-oidc.yml@v2   # below
     needs: [code, publish-gate]   # apply-repo-baseline § Publish gate
     permissions:
       id-token: write
@@ -266,8 +266,7 @@ The caller grants permissions; the callee cannot exceed them.
 ```
 
 `actions: write` is for the approval step in the v2 line of `pnpm-release-changeset-oidc.yml`
-(Step 6). repobuddy's, cyberuni's and unional's copies all have it, so every owner's caller grants
-the scope. **apply-repo-baseline** § 5 has the detail, and its § Publish gate has the `publish-gate`
+(Step 6). `repobuddy/.github@v2` has it, so every caller grants the scope. **apply-repo-baseline** § 5 has the detail, and its § Publish gate has the `publish-gate`
 job.
 
 Declare the block even where the repo default is already `write`. It is least privilege, it works
@@ -285,13 +284,13 @@ gh api repos/<o>/<r>/actions/permissions/workflow --jq .default_workflow_permiss
 gh api -X PUT repos/<o>/<r>/actions/permissions/workflow -f default_workflow_permissions=write
 ```
 
-Add the secretless workflow **alongside** the token-based one in the `.github` repo rather than replacing it, so repos that have not migrated keep working.
+`repobuddy/.github` keeps the secretless workflow **alongside** the token-based one rather than replacing it, so repos that have not migrated keep working.
 
 ### Which ref the caller pins, and why `@v1` is now a hazard
 
-Pin a tag of `<owner>/.github`, never `@main`. The tag depends on the owner and on the repo's
-`@changesets/cli` major; **apply-repo-baseline** § Which ref owns the rule (repobuddy and cyberuni
-pin `@v2` for CLI v3). This section covers why `@v1` is not one of the choices.
+Pin `repobuddy/.github@v2`, never `@main`. **apply-repo-baseline** § Which ref owns the rule. `v1`
+is retired, and so are the tags of `cyberuni/.github` and `stable-packages/.github`. This section
+covers why `@v1` is not one of the choices.
 
 `npm@latest` is now npm 12 (12.2.1 on 2026-11-04), and npm 12 wraps `npm info --json` in an array
 (changesets/changesets#2164). Whether that breaks a publish depends on the changesets CLI, not on
@@ -306,25 +305,27 @@ which npm the workflow installs:
 So `npm@latest` is safe on any v2 line, which pairs `changesets/action@v2` with CLI 3. Keep the
 CLI at 3.0.3 or later. repobuddy's `pnpm-release-changeset-oidc.yml@v2` installs `npm@latest` and
 has published on npm 12.2.1: `repobuddy/buddy-agent-harness` 1.0.0 (run 41851653792) and
-`@repobuddy/storybook` 2.34.1 (run 41167167643). repobuddy/.github#77 has the evidence. cyberuni's
-v2 pins `npm@11`; CLI 3 callers do not need that pin.
+`@repobuddy/storybook` 2.34.1 (run 41167167643). repobuddy/.github#77 has the evidence. The retired
+`cyberuni/.github@v2` pinned `npm@11`; CLI 3 callers do not need that pin.
 
-`@v1` is the hazard. It pairs `changesets/action@v1` with CLI 2 and installs `npm@latest`, so it is
-broken under npm 12. Three repos were exposed on `@v1`. Upgrade them to CLI 3 and move them to
-`@v2`. A repo that has to stay on CLI 2 must pin npm 11 (11.5.1 or later, which trusted publishing
-needs) in its own release workflow; the frozen `@v1` will not.
+`@v1` is retired, and it was the hazard. It pairs `changesets/action@v1` with CLI 2 and installs
+`npm@latest`, so it is broken under npm 12. Upgrade any repo still on `@v1`, of `repobuddy/.github`
+or of `cyberuni/.github`, to CLI 3 and move it to `repobuddy/.github@v2`. There is no CLI 2 line to
+stay on.
 
 `@main` is out because it lands every upstream change in every repo at once; that is how one
 `pnpm-verify` playwright bug reached five repos in a day. A moving major tag (`@v2`) still moves.
 Advancing it for a bugfix is normal, but read the interface diff before you point repos at it:
 
 ```bash
-gh api repos/<owner>/.github/compare/v2...main
+gh api repos/repobuddy/.github/compare/v2...main
 ```
 
-**Pinning the caller does not pin what the workflow calls.** cyberuni's `pnpm-verify.yml` at `v2`
-references `setup-playwright@main` internally, so that composite still floats however tightly every
-caller is pinned. Treat a pinned caller as reducing the blast radius, not removing it.
+**Pinning the caller does not pin what the workflow calls.** `repobuddy/.github@v2` pins its own
+composites and script checkouts at `v2`, so they move with the tag. The retired
+`cyberuni/.github@v2` referenced `setup-playwright@main` internally, so that composite floated
+however tightly every caller was pinned. Treat a pinned caller as reducing the blast radius, not
+removing it.
 
 ### The changesets action and CLI versions are a matched pair
 
@@ -385,7 +386,7 @@ What differs is who approves them:
 | Release workflow | How the PR is opened | Who approves the parked runs |
 | --- | --- | --- |
 | `pnpm-release-changeset.yml` — token variant | the `CI_GITHUB_TOKEN` **PAT** | you, by hand |
-| `pnpm-release-changeset-oidc.yml` — secretless, v2 line (repobuddy, cyberuni, unional) | the built-in **`GITHUB_TOKEN`** | the workflow itself, given `actions: write` (Step 4) |
+| `pnpm-release-changeset-oidc.yml` — secretless, `repobuddy/.github@v2` | the built-in **`GITHUB_TOKEN`** | the workflow itself, given `actions: write` (Step 4) |
 
 This skill used to say a PR opened with `GITHUB_TOKEN` gets no runs at all. On
 `repobuddy/buddy-agent-harness` (PR #264) the runs were created and parked, and after approval they
@@ -457,7 +458,7 @@ Each is `gh-readonly-queue/main/pr-<N>-<base-sha>`. The second PR's base SHA sho
   `action_required`; list them before reaching for an empty commit.
 - Do not call the publish gate from `pull-request.yml` on `changeset-release/` branches. It never fires
   there; make it a `needs:` of the release job (**apply-repo-baseline** § Publish gate).
-- Do not pin `<owner>/.github` at `@main` (**apply-repo-baseline** § Which ref).
+- Do not pin `repobuddy/.github` at `@main`, and do not call `unional/.github`, `cyberuni/.github` or `stable-packages/.github` (**apply-repo-baseline** § Which ref).
 - Do not try an `on: push` workflow watching `changeset-release/**`. `GITHUB_TOKEN` genuinely does suppress `push` events, so it cannot fire.
 - Do not treat trusted publishing as per repo, or point `--file` at the reusable workflow.
 - Do not install semantic-release unpinned in a secretless workflow. An old core resolves an old `@semantic-release/npm` that predates trusted publishing, and the OIDC path is skipped silently.
@@ -471,8 +472,8 @@ Each is `gh-readonly-queue/main/pr-<N>-<base-sha>`. The second PR's base SHA sho
 - Do not lower a `version` that is ahead of the registry. It reads as a typo and it queues an `E403`.
 - Do not treat the version reconciliation as part of the semantic-release migration. Both production
   incidents were on repos already using changesets.
-- Do not leave a caller on `@v1` of a changeset release workflow. It pairs with changesets CLI 2 and
-  installs `npm@latest`, and npm 12 breaks CLI 2's publish.
+- Do not leave a caller on `@v1` of a changeset release workflow. `v1` is retired; it pairs with
+  changesets CLI 2 and installs `npm@latest`, and npm 12 breaks CLI 2's publish.
 - Do not pin npm 11 to fix a CLI 3 repo under npm 12. Upgrade the CLI to 3.0.3 or later; `npm@latest`
   is safe there.
 - Do not read a publish-gate block as a bad tarball before checking what it packed. An out-of-workspace

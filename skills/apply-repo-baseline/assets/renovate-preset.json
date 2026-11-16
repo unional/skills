@@ -5,19 +5,66 @@
 	"minimumReleaseAge": "3 days",
 	"platformAutomerge": true,
 	"rebaseWhen": "behind-base-branch",
+	"gitIgnoredAuthors": ["41898282+github-actions[bot]@users.noreply.github.com"],
 	"packageRules": [
 		{
 			"matchUpdateTypes": ["minor", "patch", "pin", "digest"],
 			"automerge": true
 		},
 		{
-			"matchDepTypes": ["devDependencies"],
-			"automerge": true
-		},
-		{
 			"matchUpdateTypes": ["major"],
 			"automerge": false,
 			"additionalBranchPrefix": "major-"
+		},
+		{
+			"description": "Majors of dev tooling and the packageManager field merge after a longer soak",
+			"matchUpdateTypes": ["major"],
+			"matchDepTypes": ["devDependencies", "packageManager"],
+			"automerge": true,
+			"minimumReleaseAge": "7 days"
+		},
+		{
+			"description": "GitHub Actions majors merge",
+			"matchUpdateTypes": ["major"],
+			"matchManagers": ["github-actions"],
+			"automerge": true
+		},
+		{
+			"description": "Runtime, peer and engines majors wait for approval in the dependency dashboard",
+			"matchUpdateTypes": ["major"],
+			"matchDepTypes": ["dependencies", "peerDependencies", "engines"],
+			"automerge": false,
+			"dependencyDashboardApproval": true
+		},
+		{
+			"description": "Node majors, including @types/node, wait for approval",
+			"matchUpdateTypes": ["major"],
+			"matchPackageNames": ["node", "@types/node"],
+			"automerge": false,
+			"dependencyDashboardApproval": true
+		},
+		{
+			"description": "Changeset contract: the shared workflow may write a patch changeset for these",
+			"matchDepTypes": ["dependencies", "optionalDependencies", "pnpm.catalog.*"],
+			"matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+			"addLabels": ["dep-changeset:auto"]
+		},
+		{
+			"description": "Changeset contract: a person writes the changeset for these",
+			"matchDepTypes": ["dependencies", "optionalDependencies", "pnpm.catalog.*"],
+			"matchUpdateTypes": ["major"],
+			"addLabels": ["dep-changeset:human"]
+		},
+		{
+			"description": "Changeset contract: every peer dependency update needs a person",
+			"matchDepTypes": ["peerDependencies"],
+			"addLabels": ["dep-changeset:human"]
+		},
+		{
+			"description": "Never move an override across a major",
+			"matchDepTypes": ["pnpm-workspace.overrides", "pnpm.overrides", "overrides"],
+			"matchUpdateTypes": ["major"],
+			"enabled": false
 		}
 	],
 	"vulnerabilityAlerts": {

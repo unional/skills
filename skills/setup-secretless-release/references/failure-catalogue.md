@@ -11,7 +11,7 @@ Read the failing job's **name and duration** before the log — they identify th
 **Confirm** — list what actually exists:
 
 ```bash
-gh api repos/<owner>/.github/contents/.github/workflows --jq '.[].name'
+gh api "repos/repobuddy/.github/contents/.github/workflows?ref=v2" --jq '.[].name'
 grep -rn 'uses:.*\.github/\.github/workflows/' .github/workflows/
 ```
 
@@ -110,10 +110,9 @@ Two distinct causes, and the fix differs:
    Step 3.
 2. **npm 12 under changesets CLI 2.x.** npm 12 wraps `npm info --json` in an array
    (changesets/changesets#2164), so changesets reads every published version as unpublished and tries
-   to publish the lot. The caller is on `@v1` of the reusable release workflow, which pairs with
-   CLI 2 and installs `npm@latest`. Upgrade the repo to CLI 3 (3.0.3 or later) and move the caller to
-   `@v2`; npm 12 is safe there. A repo that has to stay on CLI 2 pins npm 11 (11.5.1 or later) in its
-   own release workflow.
+   to publish the lot. The caller is on the retired `@v1` of the reusable release workflow, which
+   pairs with CLI 2 and installs `npm@latest`. Upgrade the repo to CLI 3 (3.0.3 or later) and move
+   the caller to `repobuddy/.github@v2`; npm 12 is safe there.
 
 **Confirm** which one by reading the registry and comparing:
 
@@ -181,8 +180,8 @@ against the published `latest`, which can be years stale — `@unional/create-mo
 declared its whole toolchain under `dependencies`, so the current six read as four new ones.
 
 **Fix** — add `private: true` to the out-of-workspace manifest. For the dependency diff, confirm the
-current dependencies are correct. On repobuddy's v2 gate, acknowledge each one with a reason in
-`.github/publish-gate.json`. cyberuni's gate has no allowlist, so say so in the PR.
+current dependencies are correct, then acknowledge each one with a reason in
+`.github/publish-gate.json` (the gate at `repobuddy/.github@v2`).
 
 ## `E404 PUT` when registering a trusted publisher
 

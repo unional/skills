@@ -1,8 +1,10 @@
 # Target: .github/workflows/release.yml
-# `code` re-runs verification on main; `release` publishes via OIDC.
+# `code` re-runs verification on main; `publish-gate` diffs the tarball
+# against the registry; `release` publishes via OIDC.
 # The explicit `permissions:` block is what lets the repo keep
 # default_workflow_permissions: read (apply-repo-baseline § 5).
 # Never reintroduce `secrets: npm-token` here.
+# Pin repobuddy/.github at the released tag v2, never @main; v1 is retired.
 name: release
 
 on:
@@ -11,12 +13,19 @@ on:
 
 jobs:
   code:
-    uses: unional/.github/.github/workflows/pnpm-verify-linux.yml@main
+    uses: repobuddy/.github/.github/workflows/pnpm-verify.yml@v2
+
+  publish-gate:
+    uses: repobuddy/.github/.github/workflows/pnpm-publish-gate.yml@v2
+    needs: code
+    permissions:
+      contents: read
 
   release:
-    uses: unional/.github/.github/workflows/pnpm-release-changeset-oidc.yml@main
-    needs: code
+    uses: repobuddy/.github/.github/workflows/pnpm-release-changeset-oidc.yml@v2
+    needs: [code, publish-gate]
     permissions:
       id-token: write
       contents: write
       pull-requests: write
+      actions: write # approves the Version Packages PR's parked runs

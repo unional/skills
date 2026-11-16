@@ -22,7 +22,7 @@ any file is written, and the default when the evidence is thin is to **ask the o
 
 Not for: repos that already report `code / all-checks` — those are baseline-ready, and a token-based
 release on top of a correct split is **setup-secretless-release**'s job, not this one. Not for authoring
-the reusable workflows themselves; those live in `<owner>/.github`.
+the reusable workflows themselves; those live in `repobuddy/.github`.
 
 ## Step 1 — Classify by the check context, never by the filename
 
@@ -48,8 +48,8 @@ source, not from a run.
 
 `code / all-checks` is `<caller job id> / <callee's terminal job id>`. It appears only when a job **named
 `code`** calls a reusable workflow whose last job is **named `all-checks`**. Renaming the caller job is not
-enough; the callee has to supply the second half. `unional/.github`'s `pnpm-verify.yml`,
-`pnpm-verify-linux.yml`, and the org equivalents all end in `all-checks`. The legacy
+enough; the callee has to supply the second half. `repobuddy/.github`'s `pnpm-verify.yml` and
+`bun-verify.yml` end in `all-checks`. The legacy
 `typescript-build.yml` / `typescript-test*.yml` / `npm-release.yml` do not, and never will.
 
 See `references/legacy-shapes.md` for each shape's anatomy and what it reports.
@@ -137,16 +137,18 @@ behind `if: github.ref == 'refs/heads/main'`. The split replaces that conditiona
 | Old (`nodejs.yml`) | New |
 |---|---|
 | `build` → `typescript-build.yml` | folded into `code` |
-| `test` → `typescript-test-linux.yml`, `needs: build` | `code` → `pnpm-verify-linux.yml` (job id **must** be `code`) |
-| `release` → `npm-release.yml` + `secrets: npm-token` | `release.yml`'s `release` job → `pnpm-release-changeset-oidc.yml`, `needs: code` |
+| `test` → `typescript-test-linux.yml`, `needs: build` | `code` → `pnpm-verify.yml` (job id **must** be `code`) |
+| `release` → `npm-release.yml` + `secrets: npm-token` | `release.yml`'s `publish-gate` job → `pnpm-publish-gate.yml`, and its `release` job → `pnpm-release-changeset-oidc.yml`, `needs: [code, publish-gate]` |
 | `docgen` → `build-docs.yml` | `pnpm-docs.yml` in `release.yml`, if the repo publishes docs at all |
 
 Copy `assets/pull-request.yml` and `assets/release.yml`, then `git rm .github/workflows/nodejs.yml`.
-Pick the reusable workflow by owner convention: `pnpm-verify-linux.yml` under `unional`,
-`pnpm-verify.yml` under the orgs. Confirm the file exists before pointing at it:
+Every owner, `unional` included, calls `repobuddy/.github` pinned at its released tag `v2`, never
+`@main` and never the retired `v1` (**apply-repo-baseline** § Which ref). The legacy callees in
+`unional/.github`, `cyberuni/.github` and `stable-packages/.github` are not destinations. Confirm
+the file exists at the tag before pointing at it:
 
 ```bash
-gh api "repos/<owner>/.github/contents/.github/workflows" --jq '.[].name'
+gh api "repos/repobuddy/.github/contents/.github/workflows?ref=v2" --jq '.[].name'
 ```
 
 **5b. Prefer OIDC — migration must not introduce a token.** The legacy `npm-release.yml` takes
@@ -174,7 +176,7 @@ Missing → add `"verify": "run-p lint verify:pkg"` and a lockfile migration in 
 the workflow before the package can satisfy it just moves the red from one file to another.
 
 A repo on yarn is converting to **pnpm**, not getting a `yarn-verify*` caller — that is the standard,
-and `cyberuni` carries no `yarn-*` workflows to point at anyway. See **modernize-repo**'s
+and `repobuddy/.github` carries no `yarn-*` workflows to point at anyway. See **modernize-repo**'s
 package-manager phase for what the conversion surfaces.
 
 **5d. Land, then verify the context appears.** Merge the CI PR, then re-run step 1's check-runs command and
@@ -199,7 +201,7 @@ Report the exclusion list explicitly to whoever runs apply-repo-baseline next.
 - Do not carry `secrets: npm-token` into the new `release.yml`. Migration is the moment the token leaves.
 - Do not delete `nodejs.yml` before its replacement reports green, or in the same breath as applying a
   ruleset — that ordering strands the repo with a required check and no producer.
-- Do not point at a reusable workflow without confirming it exists in `<owner>/.github`. A missing callee
+- Do not point at a reusable workflow without confirming it exists in `repobuddy/.github` at `v2`. A missing callee
   fails the run in ~0s with no jobs and no logs.
 - Do not leave a repo classified but undecided. Step 6 or it did not happen.
 

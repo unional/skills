@@ -170,8 +170,8 @@ importers:
         specifier: ^3.0.2
         version: 3.0.2
       universal-plugin:
-        specifier: ^0.22.0
-        version: 0.22.0
+        specifier: ^0.23.0
+        version: 0.23.0
 
 packages:
 
@@ -440,8 +440,8 @@ packages:
     resolution: {integrity: sha512-wXR/dYpcqKmfWpEdZjiKJOwCNFndD0DMnrW/cYjVGttEkBfVgcLFHoNrlj47mjOVic9yyNu65alsgF4NQyTa2g==}
     engines: {node: '>=12.0.0'}
 
-  universal-plugin@0.22.0:
-    resolution: {integrity: sha512-nD/IEYTxBfzhFb9d2LQhJVPiB1a91Gurv4L286WO93g121bF+NTxcRDKQk33laSuYELShvF9RwT+va+GKumVtw==}
+  universal-plugin@0.23.0:
+    resolution: {integrity: sha512-LQnmMwB7Y1uUjpIht1UFFwYfDspeT5ARR9FEbqmFICziTxsKUlDXp/+7K13IKi0cVxmCpV4Q2rcgnNhogsFhRQ==}
     engines: {node: '>=22'}
     hasBin: true
 
@@ -707,7 +707,7 @@ snapshots:
       fdir: 6.5.0(picomatch@4.0.7)
       picomatch: 4.0.7
 
-  universal-plugin@0.22.0:
+  universal-plugin@0.23.0:
     dependencies:
       '@repobuddy/upx': 0.2.0
       rolldown: 1.2.13

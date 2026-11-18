@@ -5,16 +5,12 @@ permissions:
   contents: read
 
 jobs:
-  check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version: lts/*
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      # Fails when a generated manifest is stale against the root plugin.json.
-      - run: pnpm check
-      - run: pnpm check-version
+  # The job id `code` and the reusable workflow's `all-checks` job make the
+  # `code / all-checks` context that the main ruleset requires.
+  code:
+    uses: repobuddy/.github/.github/workflows/pnpm-verify.yml@v2
+    with:
+      os: '["ubuntu-latest"]'
+      node-version: '["lts/*"]'
+      skip-codecov: true
+      skip-playwright: true

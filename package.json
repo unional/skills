@@ -21,13 +21,16 @@
   ],
   "license": "MIT",
   "scripts": {
+    "build": "universal-plugin plugin build",
+    "check": "universal-plugin plugin build --check",
+    "check-version": "universal-plugin publish check-version",
     "cs": "changeset",
     "version": "changeset version && universal-plugin publish sync-version && universal-plugin plugin build",
     "release": "changeset publish"
   },
   "devDependencies": {
     "@changesets/cli": "^3.0.2",
-    "universal-plugin": "^0.14.0"
+    "universal-plugin": "^0.22.0"
   },
   "packageManager": "pnpm@12.16.1"
 }

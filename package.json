@@ -24,6 +24,7 @@
     "build": "universal-plugin plugin build",
     "check": "universal-plugin plugin build --check",
     "check-version": "universal-plugin publish check-version",
+    "verify": "pnpm check && pnpm check-version",
     "cs": "changeset",
     "version": "changeset version && universal-plugin publish sync-version && universal-plugin plugin build",
     "release": "changeset publish"

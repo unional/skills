@@ -145,7 +145,7 @@ Redirects cover URLs; text embedded in published artifacts does not follow them.
 1. `repository`, `homepage`, and `bugs` in `package.json` — `repository` is read when **generating provenance**, so a stale value ships in the attestation.
 2. Codecov and badge URLs in `readme.md` — and fix any `branch/master` left in them while there.
 3. Local remotes on every machine and worktree: `git remote set-url origin git@github.com:<org>/<r>.git`.
-4. Any workflow or doc that hardcodes `<olduser>/<repo>`: `grep -rn '<olduser>/<repo>' .`
+4. Any workflow or doc that hardcodes `<olduser>/<repo>`: `grep -rn '<olduser>/<repo>' .`. Do not point callers at the new org's own `.github`: the shared workflows live in `repobuddy/.github`, pinned at `@v2`, and the Renovate preset is `github>repobuddy/renovate-preset`, whichever org owns the repo.
 
 Add a changeset. `repository` metadata is user-visible in the published package, so the move earns a patch entry rather than riding along silently — use **add-changeset**.
 

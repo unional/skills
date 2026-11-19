@@ -1,6 +1,6 @@
 # Set Up an Org
 
-Turns a newly created GitHub organization into one that matches the cyberuni house: a public `.github` repo with the org profile, default community health files, and reusable pnpm workflows; Discussions; an org Project; the org description and homepage; and logo candidates in the cyber-* icon frame.
+Turns a newly created GitHub organization into one that matches the cyberuni house: a public `.github` repo with the org profile, default community health files, and callers pinned to the shared workflows in `repobuddy/.github`; Discussions; an org Project; the org description and homepage; and logo candidates in the cyber-* icon frame.
 
 ## When to use
 

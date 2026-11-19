@@ -44,6 +44,11 @@
 			"dependencyDashboardApproval": true
 		},
 		{
+			"description": "@types/node tracks the supported Node range, so every @types/node update, of any size, is a deliberate call and never automerges",
+			"matchPackageNames": ["@types/node"],
+			"automerge": false
+		},
+		{
 			"description": "Changeset contract: the shared workflow may write a patch changeset for these",
 			"matchDepTypes": ["dependencies", "optionalDependencies", "pnpm.catalog.*"],
 			"matchUpdateTypes": ["minor", "patch", "pin", "digest"],

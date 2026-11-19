@@ -1,0 +1,16 @@
+name: pull-request
+on: pull_request
+
+permissions:
+  contents: read
+
+jobs:
+  # The job id `code` and the reusable workflow's `all-checks` job make the
+  # `code / all-checks` context that the main ruleset requires.
+  code:
+    uses: repobuddy/.github/.github/workflows/pnpm-verify.yml@v2
+    with:
+      os: '["ubuntu-latest"]'
+      node-version: '["lts/*"]'
+      skip-codecov: true
+      skip-playwright: true

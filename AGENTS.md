@@ -39,6 +39,8 @@ Do not recreate `.plugin/plugin.json`. Copilot CLI searches `.plugin/plugin.json
 
 This repo is pure markdown apart from manifest generation. There are no lint or test commands; the only build step is `npx universal-plugin plugin build`, which regenerates the derived manifests and catalogs from the root `plugin.json`.
 
+`pnpm verify` runs `plugin build --check` (fails on a stale vendor manifest or catalog) and `publish check-version`. PR CI runs it through `repobuddy/.github`'s `pnpm-verify.yml@v2`, which reports the `code / all-checks` context.
+
 The dependencies are `@changesets/cli` and `universal-plugin`, installed with pnpm for the release workflow.
 
 ## Releases

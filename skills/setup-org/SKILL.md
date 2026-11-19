@@ -1,6 +1,6 @@
 ---
 name: setup-org
-description: "Set up a new GitHub organization in the cyberuni house style — a public .github repo with the org profile, community health files, and reusable pnpm workflows; Discussions; an org Project; org description and homepage; and a logo drawn in the cyber-* icon frame, rendered as light and dark PNG avatars for the owner to pick. Use when asked to 'set up the org', 'set up the new org', 'add a .github repo', 'add an org profile', 'make an org logo', or right after the owner creates an org through the web UI."
+description: "Set up a new GitHub organization in the cyberuni house style — a public .github repo with the org profile and community health files, with callers pinned to the shared workflows in repobuddy/.github; Discussions; an org Project; org description and homepage; and a logo drawn in the cyber-* icon frame, rendered as light and dark PNG avatars for the owner to pick. Use when asked to 'set up the org', 'set up the new org', 'add a .github repo', 'add an org profile', 'make an org logo', or right after the owner creates an org through the web UI."
 ---
 
 # Set Up an Org
@@ -48,7 +48,7 @@ Then change only what names the old org:
 
 | Path | Change |
 | --- | --- |
-| every `cyber-civitas/.github` ref | the new `<org>/.github`. These are the `@v1` self-references the workflows and starter templates call |
+| every `cyber-civitas/.github` ref | the new `<org>/.github`, except workflow and Renovate refs. The shared reusable workflows live in `repobuddy/.github`, so keep those calls on `repobuddy/.github/...@v2` (`v1` is retired), and point Renovate at `github>repobuddy/renovate-preset` |
 | `README.md`, `AGENTS.md`, `.github/CONTRIBUTING.md` | the org name in prose |
 | `profile/README.md` | rewrite from Step 1: what the org ships, one table, one **Read more** link |
 | `.github/actions/publish-gate/publish-gate.mjs` | add the org's npm scope and its unscoped package names to `FIRST_PARTY`, with a test in `publish-gate.test.mjs`. Wildcards must be a whole scope, so list unscoped names one by one |
@@ -80,7 +80,7 @@ gh repo edit <org>/.github --enable-discussions
 
 The repo must be **public**: GitHub reads the profile and the default health files only from a public `.github`.
 
-**Do not cut `v1` yet.** The reusable workflows resolve `<org>/.github/...@v1`, and nothing calls them until the first repo moves in. Cutting the tag is a release; leave it as a *Not yet* line in the README and in the report.
+**Do not cut a tag.** The org's reusable workflows are not a release line of their own: callers use `repobuddy/.github@v2`. Leave any tag of the org's own `.github` as a *Not yet* line in the README and in the report.
 
 ## Step 4 — Org metadata and Project
 

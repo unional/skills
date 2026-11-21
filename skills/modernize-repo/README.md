@@ -5,7 +5,7 @@ Brings one repository fully current in a single pass: settings baseline, a relea
 ## When to use
 
 - "Modernize this repo", "bring it up to standard", "fix everything about this repo"
-- After **audit-release-health** flags a repo as broken
+- After **review-release-health** flags a repo as broken
 
 ## What it does
 

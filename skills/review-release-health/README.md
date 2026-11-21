@@ -1,11 +1,11 @@
-# Audit Release Health
+# Review Release Health
 
 Sweeps an owner's repositories to find the ones that stopped publishing, classifies each failure by root cause, and reports the evidence needed to fix them.
 
 ## When to use
 
 - "Which of my repos are broken?" or "is anything not publishing?"
-- "Audit my releases" or "find repos that need modernizing"
+- "Review my releases" or "find repos that need modernizing"
 - Before running **modernize-repo**, to decide which repos to run it on
 
 ## What it does
@@ -19,7 +19,7 @@ The failure modes it separates are the ones that look alike from outside: a pipe
 ## Install
 
 ```bash
-npx skills add unional/skills --skill audit-release-health
+npx skills add unional/skills --skill review-release-health
 ```
 
 Or install every skill in this repo as one universal plugin, which works on Claude Code, Cursor, Codex, and GitHub Copilot CLI: <https://github.com/unional/skills#installation>

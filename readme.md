@@ -29,7 +29,7 @@ Each skill has its own README with the full description and install command.
 | Skill | Description |
 | ----- | ----------- |
 | **[modernize-repo](skills/modernize-repo)** | Bring one repo fully current in a single pass. Orchestrates the skills below in the order their dependencies require; each phase gates the next. |
-| **[audit-release-health](skills/audit-release-health)** | Sweep an owner's repos for the ones that stopped publishing, grouped by root cause with the evidence to act. Produces the worklist `modernize-repo` works. |
+| **[review-release-health](skills/review-release-health)** | Sweep an owner's repos for the ones that stopped publishing, grouped by root cause with the evidence to act. Produces the worklist `modernize-repo` works. |
 | **[migrate-legacy-ci](skills/migrate-legacy-ci)** | Decide what to do with a repo still on the old `nodejs.yml` pipeline: archive it, drop its CI, or migrate to the `pull-request.yml` + `release.yml` split. Run before the baseline. |
 | **[apply-repo-baseline](skills/apply-repo-baseline)** | Bring a repo or org up to my standard baseline: branch ruleset, merge/Actions settings, security toggles, CI layout. Also audits drift across many repos. |
 | **[setup-secretless-release](skills/setup-secretless-release)** | Move a release off `NPM_TOKEN`/PAT secrets onto OIDC trusted publishing, migrating to pnpm + changesets on the way, and make dependency PRs merge without manual rebases. |

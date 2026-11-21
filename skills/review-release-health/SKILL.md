@@ -1,9 +1,9 @@
 ---
-name: audit-release-health
-description: "Sweep an owner's repos to find which ones stopped publishing, classify each failure by root cause, and report the evidence needed to fix them. Use when asked 'which of my repos are broken?', 'is anything not publishing?', 'audit my releases', 'find repos that need modernizing', or before running modernize-repo so you know which repos to run it on."
+name: review-release-health
+description: "Sweep an owner's repos to find which ones stopped publishing, classify each failure by root cause, and report the evidence needed to fix them. Use when asked 'which of my repos are broken?', 'is anything not publishing?', 'review my releases', 'find repos that need modernizing', or before running modernize-repo so you know which repos to run it on."
 ---
 
-# Audit Release Health
+# Review Release Health
 
 Finds **which** repos are not publishing. `modernize-repo` fixes one repo; this skill produces its worklist. Read-only from start to finish — it inspects, classifies, and reports, and changes nothing.
 
@@ -133,7 +133,7 @@ gh api "repos/<o>/<r>/actions/runs?status=action_required&per_page=5" \
 
 `BLOCKED` with an **empty check list** is the signature — nothing red, because nothing ran. One repo found this way had been stuck for weeks.
 
-Report it; **ship-it** is the fix. This audit still changes nothing.
+Report it; **ship-it** is the fix. This review still changes nothing.
 
 ## Report
 
@@ -153,12 +153,12 @@ Say what you actually checked and what you could not. A sweep that implies full 
 - Do not assume `workspaces` in `package.json` is the whole picture — pnpm repos declare theirs elsewhere.
 - Do not read logs before job names and durations; you will spend the time and learn less.
 - Do not report a count without the floor-not-ceiling caveat.
-- Do not fix anything during the sweep. Audit produces a worklist; **modernize-repo** works it, one repo at a time.
+- Do not fix anything during the sweep. The review produces a worklist; **modernize-repo** works it, one repo at a time.
 - Do not write to any repo — no dispatching workflows, no re-running runs, no settings changes.
 
 ## References
 
 - **setup-secretless-release** — `references/failure-catalogue.md` carries every signature step 3 routes to, plus the fix for each
-- **modernize-repo** — the per-repo repair pass this audit feeds
+- **modernize-repo** — the per-repo repair pass this review feeds
 - **apply-repo-baseline** — for repos whose finding is settings drift rather than a broken release
 - **ship-it** — for repos whose finding is a stuck `Version Packages` PR

@@ -194,7 +194,7 @@ Any result older than a couple of days is a release that stopped shipping.
 
 ## References
 
-- **audit-release-health** — the read-only sweep; its second net covers this detection
+- **review-release-health** — the read-only sweep; its second net covers this detection
 - **setup-secretless-release** — how these repos publish (OIDC, no tokens); Step 6 says which owners' secretless workflow approves its own Version PR's runs
 - **apply-repo-baseline** — § 5 has the release caller's `permissions:` block, `actions: write` included; § The version PR with no checks has the diagnosis in more depth
 - **merge-dep-prs** — deliberately excludes release PRs; this skill is where they are handled instead

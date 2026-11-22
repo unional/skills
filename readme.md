@@ -36,10 +36,21 @@ Each skill has its own README with the full description and install command.
 | **[transfer-repo-to-org](skills/transfer-repo-to-org)** | Move a repo from a personal namespace into an org without breaking its next release. Re-registers the npm trusted publisher that pins `owner/repo`, fixes metadata, unlocks the merge queue. |
 | **[modernize-toolchain](skills/modernize-toolchain)** | Replace a TypeScript library's build, lint, test and dependency stack in one pass: tsdown, biome, turbo, vitest. Deletes before it upgrades. |
 | **[setup-org](skills/setup-org)** | Set up a new GitHub org in the house style: a `.github` repo with profile, health files, and reusable workflows, Discussions, a Project, metadata, and logo candidates in the cyber-* frame. Lists the steps GitHub has no API for. |
-| **[add-website](skills/add-website)** | Add an Astro + Starlight docs site to a repo, deploy it to GitHub Pages and enable Pages there, matching the cyberuni house layout. Insists every documented example come from a test assertion. |
 | **[sweep-dependency](skills/sweep-dependency)** | Move one package to a new version across every repo I own, leaf-first: dispatch pods, gate and merge each PR, release it, and verify the publish on npm before moving up. |
 | **[technical-writer](skills/technical-writer)** | One documentation standard: controlled plain prose, one home per fact, every external claim backed by a source. Also audits an existing corpus. |
 | **[post-on-x](skills/post-on-x)** | Draft, review, and plan X posts against the ranking weights X publishes. Re-checks the weights when stale, and turns disputed claims into tests on your own posts. |
+
+## References
+
+The plugin also ships references in `references/`: documents another plugin's skills load by name through the `reference` skill of [`cyber-agentkit`](https://github.com/cyber-uni/cyber-agentkit). Each one states only the sections it changes, over the default it lists in its `extends`.
+
+| Reference | Applies over | What it changes |
+| --------- | ------------ | --------------- |
+| `website.init` | `repobuddy`'s `website` skill default | Adds the site in the cyberuni house style: `apps/website` copied from `cyberuni/cyber-mux`, the Linear theme, the cyber-* icon system, base-prefixed links, and examples taken from test assertions |
+| `website.deploy` | `repobuddy`'s `website` skill default | Always deploys to GitHub Pages, and enables Pages without asking |
+| `website.update` | `repobuddy`'s `website` skill default | Keeps the explicit sidebar, base-prefixed links, the reference repo's versions, and examples from test assertions |
+
+With `repobuddy` and this plugin installed, `repobuddy:website init` follows the house style. If another installed plugin also ships `website.init`, `website.deploy`, or `website.update`, pick which one applies in the `reference` skill's Customize mode.
 
 ## Installation
 

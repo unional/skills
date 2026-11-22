@@ -96,7 +96,7 @@ The homepage is the site that documents the org's work today, even if it lives u
 
 ## Step 5 — Draw logo candidates
 
-Follow the cyber-* icon system, `docs/design/icon-system.md` in `cyberuni/cyber-mux`: the two frame paths copied verbatim, a glyph in the 32..96 slot, at least 5 units of clearance from the frame, monochrome. **add-website** § Icon has the short version.
+Follow the cyber-* icon system, `docs/design/icon-system.md` in `cyberuni/cyber-mux`: the two frame paths copied verbatim, a glyph in the 32..96 slot, at least 5 units of clearance from the frame, monochrome. The **Icon** paragraph in Step 4 of this plugin's `website.init` reference (`references/website.init.md`) has the short version.
 
 How to choose a glyph (precedent: the civitas glyph study, § The glyph in `cyber-civitas.github.io/AGENTS.md`):
 
